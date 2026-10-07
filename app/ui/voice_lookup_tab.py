@@ -38,6 +38,27 @@ class VoiceLoaderThread(QThread):
         self.sort = sort
 
     def run(self):
+        if self.source == "kokoro_local":
+            try:
+                from app.core.kokoro_engine import get_kokoro_voices
+                all_voices = get_kokoro_voices()
+                q = self.search_query.lower()
+                filtered = []
+                for v in all_voices:
+                    if q and (q not in v["name"].lower() and q not in v["voice_id"].lower() and q not in v["language"].lower()):
+                        continue
+                    if self.gender != "all":
+                        gen_str = "nữ" if self.gender.lower() in ("female", "nữ") else "nam"
+                        if v["gender"].lower() != gen_str:
+                            continue
+                    if self.lang != "all" and v["language"].lower() != self.lang.lower():
+                        continue
+                    filtered.append(v)
+                self.loaded.emit(filtered, False, len(filtered), "")
+            except Exception as e:
+                self.loaded.emit([], False, 0, f"Lỗi khi tải giọng Kokoro: {e}")
+            return
+
         client = VibiClient()
         if not client.is_configured():
             self.loaded.emit([], False, 0, "Chưa cấu hình Voice API Key! Vào Cài đặt để nhập Key.")
@@ -311,6 +332,7 @@ class VoiceLookupTab(QWidget):
 
         # Nguồn giọng
         self.combo_source = QComboBox()
+        self.combo_source.addItem("🌸 Kokoro Local (Offline)", "kokoro_local")
         self.combo_source.addItem("🌐 Giọng Phổ Biến", "community_voices")
         self.combo_source.addItem("⚡ ElevenLabs (Mặc định)", "elevenlabs_default")
         self.combo_source.addItem("⚡ ElevenLabs (Thư viện cộng đồng)", "elevenlabs_shared")

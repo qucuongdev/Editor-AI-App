@@ -357,6 +357,26 @@ class VibiClient:
         target_dir = output_dir or config.DOWNLOADS_DIR
         target_dir.mkdir(parents=True, exist_ok=True)
 
+        if provider == "kokoro":
+            from app.core.kokoro_engine import generate_kokoro_tts
+            out_file = target_dir / output_filename if output_filename else None
+            speed = 1.0
+            if voice_settings and "speed" in voice_settings:
+                try:
+                    speed = float(voice_settings["speed"])
+                except (ValueError, TypeError):
+                    speed = 1.0
+
+            return generate_kokoro_tts(
+                text=text,
+                voice_id=voice_id,
+                output_path=out_file,
+                speed=speed,
+                export_srt=export_transcript,
+                progress_callback=progress_callback,
+                is_cancelled=is_cancelled
+            )
+
         task_data = self.create_tts_task(
             voice_id=voice_id,
             text=text,

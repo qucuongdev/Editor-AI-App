@@ -102,24 +102,28 @@ class TTSWorker(QThread):
 
     def run(self):
         client = VibiClient()
-        if not client.is_configured():
-            self.task_finished.emit(False, "", "", "Chưa có Voice API Key! Vào Cài đặt để nhập Key.")
-            return
+        if self.provider != "kokoro":
+            if not client.is_configured():
+                self.task_finished.emit(False, "", "", "Chưa có Voice API Key! Vào Cài đặt để nhập Key.")
+                return
 
-        self.status_updated.emit("Đang kiểm tra tài khoản và số dư...")
-        self.progress_updated.emit(10)
+            self.status_updated.emit("Đang kiểm tra tài khoản và số dư...")
+            self.progress_updated.emit(10)
 
-        try:
-            acc_info = client.get_account_info()
-            self.account_updated.emit(acc_info)
-        except Exception as e:
-            self.task_finished.emit(False, "", "", f"Lỗi xác thực Voice API: {e}")
-            return
+            try:
+                acc_info = client.get_account_info()
+                self.account_updated.emit(acc_info)
+            except Exception as e:
+                self.task_finished.emit(False, "", "", f"Lỗi xác thực Voice API: {e}")
+                return
 
-        self.status_updated.emit("Đang gửi yêu cầu lên Voice API...")
+        self.status_updated.emit("Đang khởi tạo tạo giọng nói...")
         self.progress_updated.emit(20)
 
-        chunks = VibiClient.split_long_text(self.text, max_chars=3500)
+        if self.provider == "kokoro":
+            chunks = [self.text]
+        else:
+            chunks = VibiClient.split_long_text(self.text, max_chars=3500)
         total_chunks = len(chunks)
 
         last_audio = None
@@ -524,6 +528,7 @@ class TTSTab(QWidget):
         lbl_prov.setProperty("class", "section_label")
         self.combo_provider = QComboBox()
         self.combo_provider.addItem("⚡ ElevenLabs", "elevenlabs")
+        self.combo_provider.addItem("🌸 Kokoro Local", "kokoro")
         self.combo_provider.addItem("🤖 MiniMax", "minimax")
         self.combo_provider.addItem("🎬 CapCut", "capcut")
         self.combo_provider.currentIndexChanged.connect(self.on_provider_changed)
@@ -814,10 +819,16 @@ class TTSTab(QWidget):
     def _restore_voice_ids(self, settings: Dict[str, Any]) -> None:
         restored = {
             "elevenlabs": "",
+            "kokoro": "vi_mai_linh",
             "minimax": "",
             "capcut": "",
         }
-        restored_names = {provider: "" for provider in restored}
+        restored_names = {
+            "elevenlabs": "",
+            "kokoro": "🇻🇳 Mai Linh (Tiếng Việt)",
+            "minimax": "",
+            "capcut": "",
+        }
         saved_voice_ids = settings.get("voice_ids")
         if isinstance(saved_voice_ids, dict):
             for provider in restored:
@@ -851,14 +862,15 @@ class TTSTab(QWidget):
         self.combo_model.clear()
         self.combo_lang.clear()
 
-        if provider == "minimax":
+        if provider == "kokoro":
+            self.combo_model.addItems(["kokoro-v1.0", "kokoro-vi"])
+            self.combo_lang.addItems(["vi", "en", "zh", "ja", "ko"])
+        elif provider == "minimax":
             self.combo_model.addItems(["speech-2.8-hd", "speech-2.8-turbo", "speech-2.6-hd", "speech-2.6-turbo", "speech-02-hd", "speech-01-hd"])
             self.combo_lang.addItems(["Vietnamese", "English", "Chinese (Mandarin)", "Japanese", "French", "German", "Spanish"])
-
         elif provider == "capcut":
             self.combo_model.addItems(["capcut"])
             self.combo_lang.addItems(["vi", "en", "zh", "id", "es", "pt", "ja", "th"])
-
         else:
             # ElevenLabs
             self.combo_model.addItems(["eleven_v3", "eleven_multilingual_v2", "eleven_flash_v2_5", "eleven_turbo_v2_5"])
