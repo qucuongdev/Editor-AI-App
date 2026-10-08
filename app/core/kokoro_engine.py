@@ -9,10 +9,15 @@ import os
 import re
 import time
 import shutil
-import numpy as np
-import soundfile as sf
+import sys
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional, Callable
+
+# Inject kokoro-tts/src into sys.path to enable direct mode
+_kokoro_src_path = Path(__file__).resolve().parents[3] / "kokoro-tts" / "src"
+if _kokoro_src_path.exists() and str(_kokoro_src_path) not in sys.path:
+    sys.path.insert(0, str(_kokoro_src_path))
+
 
 # Try importing gradio_client
 try:
@@ -139,6 +144,13 @@ def generate_kokoro_tts(
     if not text or not text.strip():
         raise ValueError("Văn bản truyền vào rỗng!")
 
+    if voice_id.startswith("vi_"):
+        try:
+            from app.core.text_normalizer import normalize_vietnamese_text
+            text = normalize_vietnamese_text(text)
+        except ImportError:
+            pass
+
     if output_path is None:
         from app import config
         target_dir = config.TTS_DOWNLOADS_DIR
@@ -168,7 +180,21 @@ def generate_kokoro_tts(
             temp_file_path = res[0] if isinstance(res, (tuple, list)) else res
             if temp_file_path and Path(temp_file_path).exists():
                 shutil.copy2(str(temp_file_path), str(output_path))
-                # Note: Gradio server returned audio, proceed below if SRT needed or return
+                # Return immediately if Gradio succeeds
+                srt_path = None
+                if export_srt:
+                    try:
+                        import soundfile as sf
+                        info = sf.info(str(output_path))
+                        dur = info.duration
+                        srt_path = output_path.with_suffix(".srt")
+                        start_str = _format_srt_time(0.0)
+                        end_str = _format_srt_time(dur)
+                        srt_path.write_text(f"1\n{start_str} --> {end_str}\n{text}\n", encoding="utf-8")
+                    except Exception as e:
+                        print(f"[Kokoro Engine] Warning: Could not generate dummy SRT: {e}")
+                        srt_path = None
+                return output_path, srt_path
         except Exception as e:
             print(f"[Kokoro Engine] Gradio API note ({e}), using direct local model execution.")
 
@@ -217,11 +243,13 @@ def generate_kokoro_tts(
     if not audio_chunks:
         raise RuntimeError("Kokoro không tạo ra dữ liệu âm thanh nào!")
 
+    import numpy as np
     full_audio = np.concatenate(audio_chunks)
 
     if progress_callback:
         progress_callback({"status": "Đang ghi file audio & srt..."})
 
+    import soundfile as sf
     # Save audio
     if output_path.suffix.lower() == ".mp3":
         try:
