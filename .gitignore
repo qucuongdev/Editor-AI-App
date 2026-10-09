@@ -79,6 +79,3 @@ tests/*
 !tests/test_watermark_folder_selection.py
 build/
 dist/
-
-# Ignore AI Models and downloaded voices
-models/
