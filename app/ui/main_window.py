@@ -127,7 +127,7 @@ class MainWindow(QMainWindow):
     def update_api_status_badge(self, *_args) -> None:
         self.api_chip.setStyleSheet("")
         self.api_chip.setText(
-            "Voice API\nĐã cấu hình" if config.VIBI_API_KEY.strip()
+            "Voice API\nĐã cấu hình" if config.settings.VIBI_API_KEY.strip()
             else "Voice API\nChưa cấu hình"
         )
 
@@ -201,12 +201,12 @@ class MainWindow(QMainWindow):
         layout.setSpacing(10)
 
         title = QLabel("Editor Video AI")
-        title.setStyleSheet("font-size: 14px; font-weight: 700; color: #f8fafc;")
+        title.setProperty("class", "app_title_text")
         layout.addWidget(title)
         layout.addStretch()
 
         self.update_status_label = QLabel(f"v{APP_VERSION}  •  Chưa kiểm tra")
-        self.update_status_label.setStyleSheet("color: #94a3b8; font-size: 12px; font-weight: 600;")
+        self.update_status_label.setProperty("class", "text_muted_12")
         layout.addWidget(self.update_status_label)
         self.update_button = QPushButton("Kiểm tra cập nhật")
         self.update_button.setObjectName("btn_subtle")
@@ -333,7 +333,7 @@ class MainWindow(QMainWindow):
             'style="color: #93c5fd; text-decoration: underline;">Zalo</a>'
         )
         zalo_link.setOpenExternalLinks(True)
-        zalo_link.setStyleSheet("color: #93c5fd; font-size: 12px; font-weight: 600;")
+        zalo_link.setProperty("class", "text_link_12")
         layout.addWidget(zalo_link)
 
         layout.addStretch()
@@ -352,7 +352,7 @@ class MainWindow(QMainWindow):
         )
         website_link.setObjectName("footer_website_link")
         website_link.setOpenExternalLinks(True)
-        website_link.setStyleSheet("font-size: 12px; font-weight: 700;")
+        website_link.setProperty("class", "text_link_12")
         layout.addWidget(website_link)
 
         layout.addSpacing(16)
@@ -363,17 +363,17 @@ class MainWindow(QMainWindow):
         )
         donate_link.setObjectName("footer_donate_link")
         donate_link.setToolTip("Donate qua Momo")
-        donate_link.setStyleSheet("font-size: 12px; font-weight: 600;")
+        donate_link.setProperty("class", "text_link_12")
         layout.addWidget(donate_link)
 
         layout.addSpacing(16)
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.VLine)
-        divider.setStyleSheet("color: #334155;")
+        divider.setProperty("class", "vertical_divider")
         layout.addWidget(divider)
         layout.addSpacing(10)
 
         self.footer_creator = QLabel("© Created by: qucuongdev")
-        self.footer_creator.setStyleSheet("color: #94a3b8; font-size: 12px; font-weight: 600;")
+        self.footer_creator.setProperty("class", "text_muted_12")
         layout.addWidget(self.footer_creator)
         return footer

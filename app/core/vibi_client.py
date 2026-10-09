@@ -15,8 +15,8 @@ class VibiClient:
     """Client tương tác với Vibi API (https://api.vibi.pro) cho ElevenLabs TTS."""
 
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
-        self.api_key = api_key or config.VIBI_API_KEY
-        self.base_url = (base_url or config.VIBI_API_BASE or "https://api.vibi.pro").rstrip("/")
+        self.api_key = api_key or config.settings.VIBI_API_KEY
+        self.base_url = (base_url or config.settings.VIBI_API_BASE or "https://api.vibi.pro").rstrip("/")
         self.session = requests.Session()
 
     def set_api_key(self, key: str):
@@ -249,9 +249,9 @@ class VibiClient:
                 }
             else:
                 voice_settings = {
-                    "stability": config.DEFAULT_VIBI_STABILITY,
-                    "similarity_boost": config.DEFAULT_VIBI_SIMILARITY,
-                    "speed": config.DEFAULT_VIBI_SPEED
+                    "stability": config.settings.DEFAULT_VIBI_STABILITY,
+                    "similarity_boost": config.settings.DEFAULT_VIBI_SIMILARITY,
+                    "speed": config.settings.DEFAULT_VIBI_SPEED
                 }
 
         payload: Dict[str, Any] = {

@@ -24,166 +24,10 @@ from app.ui.voice_lookup_tab import VoiceLookupTab
 from app.ui.voice_cloning_tab import VoiceCloningTab
 from app.ui.widgets import ToggleSwitch
 
+from app.ui.components.loading_spinner import LoadingSpinner
+from app.ui.components.voice_selector import VoiceSelectorComboBox
+from app.core.tts_worker import TTSWorker
 
-class LoadingSpinner(QWidget):
-    """Spinner tròn nhỏ cho các tác vụ đang xử lý."""
-
-    def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self._step = 0
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._advance)
-        self.setFixedSize(18, 18)
-        self.setVisible(False)
-
-    def start(self):
-        self._step = 0
-        self.setVisible(True)
-        self._timer.start(80)
-        self.update()
-
-    def stop(self):
-        self._timer.stop()
-        self.setVisible(False)
-
-    def _advance(self):
-        self._step = (self._step + 1) % 12
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.translate(self.width() / 2, self.height() / 2)
-        for index in range(12):
-            alpha = max(45, 255 - ((index - self._step) % 12) * 18)
-            painter.setPen(QPen(QColor(59, 130, 246, alpha), 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-            painter.drawLine(0, -7, 0, -4)
-            painter.rotate(30)
-
-class TTSWorker(QThread):
-    """Worker tạo giọng nói qua Vibi API."""
-    status_updated = pyqtSignal(str)
-    progress_updated = pyqtSignal(int)
-    task_finished = pyqtSignal(bool, str, str, str)
-    account_updated = pyqtSignal(dict)
-
-    def __init__(
-        self,
-        text: str,
-        voice_id: str,
-        model_id: str,
-        lang_code: str,
-        voice_settings: Dict[str, Any],
-        export_srt: bool,
-        provider: str = "elevenlabs",
-        output_filename: Optional[str] = None,
-        output_dir: Optional[Path] = None
-    ):
-        super().__init__()
-        self.text = text
-        self.voice_id = voice_id
-        self.model_id = model_id
-        self.lang_code = lang_code
-        self.voice_settings = voice_settings
-        self.export_srt = export_srt
-        self.provider = provider
-        self.output_filename = output_filename
-        self.output_dir = output_dir
-        self._is_cancelled = False
-
-    def cancel(self):
-        self._is_cancelled = True
-
-    def _refresh_credits_safely(self, client: VibiClient):
-        try:
-            info = client.get_account_info()
-            self.account_updated.emit(info)
-        except Exception:
-            pass
-
-    def run(self):
-        client = VibiClient()
-        if self.provider != "kokoro":
-            if not client.is_configured():
-                self.task_finished.emit(False, "", "", "Chưa có Voice API Key! Vào Cài đặt để nhập Key.")
-                return
-
-            self.status_updated.emit("Đang kiểm tra tài khoản và số dư...")
-            self.progress_updated.emit(10)
-
-            try:
-                acc_info = client.get_account_info()
-                self.account_updated.emit(acc_info)
-            except Exception as e:
-                self.task_finished.emit(False, "", "", f"Lỗi xác thực Voice API: {e}")
-                return
-
-        self.status_updated.emit("Đang khởi tạo tạo giọng nói...")
-        self.progress_updated.emit(20)
-
-        if self.provider == "kokoro":
-            chunks = [self.text]
-        else:
-            chunks = VibiClient.split_long_text(self.text, max_chars=3500)
-        total_chunks = len(chunks)
-
-        last_audio = None
-        last_srt = None
-
-        try:
-            for idx, chunk in enumerate(chunks, 1):
-                if self._is_cancelled:
-                    self._refresh_credits_safely(client)
-                    self.task_finished.emit(False, "", "", "Tác vụ đã bị hủy.")
-                    return
-
-                chunk_filename = self.output_filename
-                if total_chunks > 1 and chunk_filename:
-                    stem = Path(chunk_filename).stem
-                    chunk_filename = f"{stem}_part_{idx}.mp3"
-
-                def on_prog(task_dict):
-                    status = task_dict.get("status", "pending")
-                    chunk_info = f"Đoạn {idx}/{total_chunks}: " if total_chunks > 1 else ""
-                    self.status_updated.emit(f"{chunk_info}Đang tạo giọng ({status})...")
-
-                audio_p, srt_p = client.generate_and_download(
-                    text=chunk,
-                    voice_id=self.voice_id,
-                    output_filename=chunk_filename,
-                    output_dir=self.output_dir,
-                    model_id=self.model_id,
-                    language_code=self.lang_code,
-                    provider=self.provider,
-                    voice_settings=self.voice_settings,
-                    export_transcript=self.export_srt,
-                    progress_callback=on_prog,
-                    is_cancelled=lambda: self._is_cancelled
-                )
-
-                last_audio = audio_p
-                last_srt = srt_p
-
-            self.progress_updated.emit(100)
-            self.status_updated.emit("Hoàn tất tạo giọng nói.")
-            self._refresh_credits_safely(client)
-            self.task_finished.emit(
-                True,
-                str(last_audio) if last_audio else "",
-                str(last_srt) if last_srt else "",
-                "Thành công!"
-            )
-        except Exception as e:
-            self._refresh_credits_safely(client)
-            self.task_finished.emit(False, "", "", str(e))
-
-
-class VoiceSelectorComboBox(QComboBox):
-    """A read-only voice selector that routes users to voice lookup."""
-    lookup_requested = pyqtSignal()
-
-    def showPopup(self) -> None:
-        self.lookup_requested.emit()
 
 
 class TTSTab(QWidget):
@@ -378,7 +222,7 @@ class TTSTab(QWidget):
                 self.btn_choose_output.setVisible(False)
             else:
                 self.lbl_project_badge.setText("📁 Chưa chọn dự án")
-                self.lbl_project_badge.setStyleSheet("color: #6b7280; font-size: 11px;")
+                self.lbl_project_badge.setProperty("class", "text_muted_11")
                 self.lbl_project_badge.setVisible(True)
                 if not self.standalone_store:
                     self._update_output_path_label()
@@ -484,14 +328,12 @@ class TTSTab(QWidget):
             "font-size: 11px; font-weight: 700;"
         )
         self.lbl_char_count = QLabel("0 chars · 0/-- credits")
-        self.lbl_char_count.setStyleSheet(
-            "color: #cbd5e1; font-size: 13px; font-weight: 600;"
-        )
+        self.lbl_char_count.setProperty("class", "text_highlight_13")
 
         text_top.addWidget(lbl_text)
         text_top.addSpacing(10)
         self.lbl_project_badge = QLabel("📁 Chưa chọn dự án")
-        self.lbl_project_badge.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self.lbl_project_badge.setProperty("class", "text_muted_11")
         text_top.addWidget(self.lbl_project_badge)
         text_top.addStretch()
         tts_layout.addLayout(text_top)
@@ -579,7 +421,7 @@ class TTSTab(QWidget):
         self.lbl_st_val.setFixedWidth(30)
         self.slider_st = QSlider(Qt.Orientation.Horizontal)
         self.slider_st.setRange(0, 100)
-        self.slider_st.setValue(int(config.DEFAULT_VIBI_STABILITY * 100))
+        self.slider_st.setValue(int(config.settings.DEFAULT_VIBI_STABILITY * 100))
         self.slider_st.setFixedWidth(75)
         self.slider_st.valueChanged.connect(self._on_st_slider_changed)
 
@@ -590,7 +432,7 @@ class TTSTab(QWidget):
         self.lbl_sim_val.setFixedWidth(30)
         self.slider_sim = QSlider(Qt.Orientation.Horizontal)
         self.slider_sim.setRange(0, 100)
-        self.slider_sim.setValue(int(config.DEFAULT_VIBI_SIMILARITY * 100))
+        self.slider_sim.setValue(int(config.settings.DEFAULT_VIBI_SIMILARITY * 100))
         self.slider_sim.setFixedWidth(75)
         self.slider_sim.valueChanged.connect(self._on_sim_slider_changed)
 
@@ -601,7 +443,7 @@ class TTSTab(QWidget):
         self.lbl_sp_val.setFixedWidth(38)
         self.slider_sp = QSlider(Qt.Orientation.Horizontal)
         self.slider_sp.setRange(70, 150)
-        self.slider_sp.setValue(int(config.DEFAULT_VIBI_SPEED * 100))
+        self.slider_sp.setValue(int(config.settings.DEFAULT_VIBI_SPEED * 100))
         self.slider_sp.setFixedWidth(75)
         self.slider_sp.valueChanged.connect(self._on_sp_slider_changed)
 
@@ -705,7 +547,7 @@ class TTSTab(QWidget):
 
         self.loading_spinner = LoadingSpinner()
         self.lbl_status = QLabel("Sẵn sàng.")
-        self.lbl_status.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self.lbl_status.setProperty("class", "text_muted_11")
 
         status_row = QHBoxLayout()
         status_row.setContentsMargins(0, 0, 0, 0)
@@ -728,7 +570,7 @@ class TTSTab(QWidget):
         # Thông tin file
         p_info_bar = QHBoxLayout()
         self.lbl_player_file = QLabel("Chưa có file âm thanh")
-        self.lbl_player_file.setStyleSheet("color: #9ca3af; font-size: 12px;")
+        self.lbl_player_file.setProperty("class", "text_primary_12")
 
         p_info_bar.addWidget(self.lbl_player_file)
         p_info_bar.addStretch()
@@ -746,14 +588,14 @@ class TTSTab(QWidget):
         self.btn_stop.clicked.connect(self.stop_player)
 
         self.lbl_time_cur = QLabel("00:00")
-        self.lbl_time_cur.setStyleSheet("font-size: 11px; color: #6b7280;")
+        self.lbl_time_cur.setProperty("class", "text_muted_11")
 
         self.slider_player = QSlider(Qt.Orientation.Horizontal)
         self.slider_player.setRange(0, 0)
         self.slider_player.sliderMoved.connect(self.set_player_pos)
 
         self.lbl_time_tot = QLabel("00:00")
-        self.lbl_time_tot.setStyleSheet("font-size: 11px; color: #6b7280;")
+        self.lbl_time_tot.setProperty("class", "text_muted_11")
 
         scrubber.addWidget(self.btn_play_pause)
         scrubber.addWidget(self.btn_stop)
@@ -902,7 +744,7 @@ class TTSTab(QWidget):
         self.lbl_st.setText("Độ ổn định:" if is_elevenlabs else "Cao độ:")
         if is_elevenlabs:
             self.slider_st.setRange(0, 100)
-            self.slider_st.setValue(int(config.DEFAULT_VIBI_STABILITY * 100))
+            self.slider_st.setValue(int(config.settings.DEFAULT_VIBI_STABILITY * 100))
         elif not is_kokoro:
             self.slider_st.setRange(-12, 12)
             self.slider_st.setValue(0)
@@ -913,14 +755,14 @@ class TTSTab(QWidget):
         if is_elevenlabs:
             self.lbl_sim.setText("Độ tương đồng:")
             self.slider_sim.setRange(0, 100)
-            self.slider_sim.setValue(int(config.DEFAULT_VIBI_SIMILARITY * 100))
+            self.slider_sim.setValue(int(config.settings.DEFAULT_VIBI_SIMILARITY * 100))
         elif is_minimax:
             self.lbl_sim.setText("Âm lượng:")
             self.slider_sim.setRange(0, 100)
             self.slider_sim.setValue(100)
 
         self.slider_sp.setRange(70, 150)
-        self.slider_sp.setValue(int(config.DEFAULT_VIBI_SPEED * 100))
+        self.slider_sp.setValue(int(config.settings.DEFAULT_VIBI_SPEED * 100))
 
         self.combo_model.blockSignals(False)
         self.combo_lang.blockSignals(False)

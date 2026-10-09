@@ -274,7 +274,7 @@ class ProjectManager:
 
     @classmethod
     def get_projects_root(cls) -> Path:
-        cls_dir = config.PROJECTS_DIR
+        cls_dir = config.settings.PROJECTS_DIR
         cls_dir.mkdir(parents=True, exist_ok=True)
         return cls_dir
 
@@ -344,7 +344,7 @@ class ProjectManager:
         try:
             shutil.rmtree(p.path)
             # Nếu xóa trúng active project thì reset
-            if config.ACTIVE_PROJECT == slug:
+            if config.settings.ACTIVE_PROJECT == slug:
                 cls.set_active_project("")
             return True
         except Exception:
@@ -353,7 +353,7 @@ class ProjectManager:
     @classmethod
     def get_active_project(cls) -> Optional[Project]:
         """Lấy dự án đang được kích hoạt hiện tại."""
-        active_slug = config.ACTIVE_PROJECT
+        active_slug = config.settings.ACTIVE_PROJECT
         if active_slug:
             p = cls.get_project(active_slug)
             if p:

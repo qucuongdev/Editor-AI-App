@@ -210,7 +210,7 @@ class WatermarkTab(QWidget):
             self._hydrate_project_images(project)
         else:
             self.lbl_project_badge.setText("📁 Chưa chọn dự án")
-            self.lbl_project_badge.setStyleSheet("color: #6b7280; font-size: 11px;")
+            self.lbl_project_badge.setProperty("class", "text_muted_11")
             self.output_dir = None
             self.chk_custom_out.setChecked(False)
             self.chk_custom_out.setText("Lưu thư mục riêng")
@@ -332,7 +332,7 @@ class WatermarkTab(QWidget):
         out_box.setSpacing(8)
 
         self.lbl_project_badge = QLabel("📁 Chưa chọn dự án")
-        self.lbl_project_badge.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self.lbl_project_badge.setProperty("class", "text_muted_11")
 
         self.lbl_output_location = QLabel("Lưu tại:")
         self.lbl_output_location.setProperty("class", "section_label")
