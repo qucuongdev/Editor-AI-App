@@ -32,6 +32,13 @@ CA_BUNDLE = certifi.where()
 os.environ["SSL_CERT_FILE"] = CA_BUNDLE
 os.environ["REQUESTS_CA_BUNDLE"] = CA_BUNDLE
 
+# --- KOKORO CONFIGURATION ---
+# ?nh tuy?n file gi?ng nA3i v? bAn trong d? An (Editor-AI-App/models/kokoro/voices)
+# thay vA lu mc ??nh ? C:\Users\...\AppData\Local\kokoro-tts-local\voices
+kokoro_voices_dir = BASE_DIR / "models" / "kokoro" / "voices"
+kokoro_voices_dir.mkdir(parents=True, exist_ok=True)
+os.environ["KOKORO_VOICES_DIR"] = str(kokoro_voices_dir)
+
 from app.main import main
 
 if __name__ == "__main__":

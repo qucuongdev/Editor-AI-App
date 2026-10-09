@@ -21,6 +21,7 @@ from app.core.standalone_state import (
     resolve_new_output_folder,
 )
 from app.ui.voice_lookup_tab import VoiceLookupTab
+from app.ui.voice_cloning_tab import VoiceCloningTab
 from app.ui.widgets import ToggleSwitch
 
 
@@ -683,6 +684,10 @@ class TTSTab(QWidget):
         action_bar = QHBoxLayout()
         action_bar.setSpacing(8)
 
+        self.btn_preview = QPushButton("Nghe Thử (Preview)")
+        self.btn_preview.setObjectName("btn_secondary")
+        self.btn_preview.clicked.connect(self.preview_tts)
+
         self.btn_start = QPushButton("Tạo Giọng Nói")
         self.btn_start.setObjectName("btn_primary")
         self.btn_start.clicked.connect(self.start_tts)
@@ -693,6 +698,7 @@ class TTSTab(QWidget):
         self.btn_cancel.setVisible(False)
         self.btn_cancel.clicked.connect(self.cancel_tts)
 
+        action_bar.addWidget(self.btn_preview, stretch=1)
         action_bar.addWidget(self.btn_start, stretch=2)
         action_bar.addWidget(self.btn_cancel, stretch=2)
         tts_layout.addLayout(action_bar)
@@ -771,9 +777,14 @@ class TTSTab(QWidget):
         self.tts_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.tts_scroll_area.setWidget(self.tab_tts_gen)
 
-        # Thêm 2 subtab vào QTabWidget
+        # ================= SUBTAB 3: TẠO GIỌNG MỚI (CLONE) =================
+        self.voice_cloning_tab = VoiceCloningTab()
+        self.voice_cloning_tab.voice_cloned_success.connect(self.on_voice_cloned_success)
+
+        # Thêm 3 subtab vào QTabWidget
         self.tab_widget.addTab(self.tts_scroll_area, "🎙️  Tạo Giọng Nói")
         self.tab_widget.addTab(self.voice_lookup_tab, "🔍  Tra Cứu Voice")
+        self.tab_widget.addTab(self.voice_cloning_tab, "✨  Tạo Giọng (Clone)")
         self.tab_widget.currentChanged.connect(self.on_subtab_changed)
 
         root_layout.addWidget(self.tab_widget)
@@ -879,21 +890,26 @@ class TTSTab(QWidget):
         is_elevenlabs = provider == "elevenlabs"
         is_minimax = provider == "minimax"
         is_capcut = provider == "capcut"
+        is_kokoro = provider == "kokoro"
 
         self.lbl_m.setVisible(not is_capcut)
         self.combo_model.setVisible(not is_capcut)
+
+        self.lbl_st.setVisible(not is_kokoro)
+        self.slider_st.setVisible(not is_kokoro)
+        self.lbl_st_val.setVisible(not is_kokoro)
 
         self.lbl_st.setText("Độ ổn định:" if is_elevenlabs else "Cao độ:")
         if is_elevenlabs:
             self.slider_st.setRange(0, 100)
             self.slider_st.setValue(int(config.DEFAULT_VIBI_STABILITY * 100))
-        else:
+        elif not is_kokoro:
             self.slider_st.setRange(-12, 12)
             self.slider_st.setValue(0)
 
-        self.lbl_sim.setVisible(not is_capcut)
-        self.slider_sim.setVisible(not is_capcut)
-        self.lbl_sim_val.setVisible(not is_capcut)
+        self.lbl_sim.setVisible(not is_capcut and not is_kokoro)
+        self.slider_sim.setVisible(not is_capcut and not is_kokoro)
+        self.lbl_sim_val.setVisible(not is_capcut and not is_kokoro)
         if is_elevenlabs:
             self.lbl_sim.setText("Độ tương đồng:")
             self.slider_sim.setRange(0, 100)
@@ -973,6 +989,10 @@ class TTSTab(QWidget):
             settings = {
                 "speed": self.slider_sp.value() / 100.0,
                 "pitch": self.slider_st.value()
+            }
+        elif provider == "kokoro":
+            settings = {
+                "speed": self.slider_sp.value() / 100.0
             }
         else:
             settings = {
@@ -1189,3 +1209,88 @@ class TTSTab(QWidget):
                     "similarity": self.slider_sim.value() / 100.0
                 }
             )
+
+    def preview_tts(self):
+        text = self.txt_input.toPlainText().strip()
+        if not text:
+            QMessageBox.warning(self, "Chưa nhập văn bản", "Vui lòng nhập văn bản cần nghe thử!")
+            return
+
+        preview_text = text[:100]
+        if len(text) > 100:
+            preview_text += "..."
+
+        voice_id = self.current_voice_id()
+        if not voice_id:
+            QMessageBox.warning(self, "Thiếu Voice ID", "Vui lòng chọn hoặc nhập Voice ID!")
+            return
+
+        provider = self.combo_provider.currentData() or "elevenlabs"
+        model = self.combo_model.currentText()
+        lang = self.combo_lang.currentText()
+
+        settings = {}
+        if provider == "minimax":
+            settings = {"speed": self.slider_sp.value() / 100.0, "pitch": self.slider_st.value(), "vol": self.slider_sim.value() / 100.0}
+        elif provider == "capcut":
+            settings = {"speed": self.slider_sp.value() / 100.0, "pitch": self.slider_st.value()}
+        elif provider == "kokoro":
+            settings = {"speed": self.slider_sp.value() / 100.0}
+        else:
+            settings = {"stability": self.slider_st.value() / 100.0, "similarity_boost": self.slider_sim.value() / 100.0, "speed": self.slider_sp.value() / 100.0}
+
+        output_filename = "preview_voice.mp3"
+        out_dir = config.TTS_DOWNLOADS_DIR
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        self.btn_preview.setEnabled(False)
+        self.btn_start.setEnabled(False)
+        self.loading_spinner.start()
+        self.lbl_status.setText(f"Đang nghe thử giọng ({provider.upper()})...")
+
+        self.worker = TTSWorker(
+            text=preview_text,
+            voice_id=voice_id,
+            model_id=model,
+            lang_code=lang,
+            voice_settings=settings,
+            export_srt=False,
+            provider=provider,
+            output_filename=output_filename,
+            output_dir=out_dir
+        )
+        self.worker.status_updated.connect(self.lbl_status.setText)
+        self.worker.task_finished.connect(self.on_preview_finished)
+        self.worker.start()
+
+    def on_preview_finished(self, success: bool, audio_path: str, srt_path: str, msg: str):
+        self.loading_spinner.stop()
+        self.btn_preview.setEnabled(True)
+        self.btn_start.setEnabled(True)
+
+        if success:
+            self.lbl_status.setText("Nghe thử sẵn sàng.")
+            p = Path(audio_path)
+            self.lbl_player_file.setText(f"Preview: {p.name}")
+            self.player.setSource(QUrl.fromLocalFile(str(p)))
+            self.btn_play_pause.setEnabled(True)
+            self.btn_stop.setEnabled(True)
+            self.player.play()
+            self.btn_play_pause.setText("Tạm dừng")
+        else:
+            self.lbl_status.setText(f"Lỗi nghe thử: {msg}")
+            QMessageBox.critical(self, "Lỗi nghe thử", msg)
+
+    def on_voice_cloned_success(self, voice_name: str, voice_path: str):
+        """Khi clone giọng thành công, tự động chuyển về Kokoro và set Voice ID mới"""
+        # Switch to Kokoro provider
+        for i in range(self.combo_provider.count()):
+            if self.combo_provider.itemData(i) == "kokoro":
+                self.combo_provider.setCurrentIndex(i)
+                break
+        
+        # Set the newly cloned voice
+        self.set_selected_voice_id(voice_name, f"✨ {voice_name}")
+        
+        # Chuyển về tab "Tạo Giọng Nói" (tab đầu tiên)
+        self.tab_widget.setCurrentIndex(0)
