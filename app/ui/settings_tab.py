@@ -45,7 +45,6 @@ class SettingsTab(QWidget):
     """Tab quản lý API Key, kiểm tra số dư Credits và cấu hình hệ thống - Thiết kế gọn gàng, chuẩn form UX."""
     api_key_saved = pyqtSignal(str)
     account_updated = pyqtSignal(dict)
-    request_pricing = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -153,11 +152,6 @@ class SettingsTab(QWidget):
         key_help_row.setSpacing(8)
         key_help_row.addWidget(self.lbl_vibi_test_key)
         key_help_row.addStretch()
-        self.btn_buy_api_key = QPushButton("Mua API Key")
-        self.btn_buy_api_key.setObjectName("btn_buy_api")
-        self.btn_buy_api_key.setToolTip("Xem bảng giá Voice API")
-        self.btn_buy_api_key.clicked.connect(self.request_pricing.emit)
-        key_help_row.addWidget(self.btn_buy_api_key)
         ap_layout.addLayout(key_help_row)
 
         layout.addWidget(acc_panel)

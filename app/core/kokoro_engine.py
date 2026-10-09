@@ -59,6 +59,18 @@ def get_kokoro_voices() -> List[Dict[str, Any]]:
         except Exception:
             pass
 
+    # Add cloned voices
+    try:
+        from app import config
+        cloned_voices_dir = Path(config.APP_DIR) / "models" / "kokoro" / "cloned_voices"
+        if cloned_voices_dir.exists():
+            for pt_file in cloned_voices_dir.glob("*.pt"):
+                name = pt_file.stem
+                if name not in voice_names:
+                    voice_names.append(name)
+    except Exception:
+        pass
+
     if not voice_names:
         # Default fallback list of common Kokoro voices
         voice_names = [
@@ -88,6 +100,15 @@ def get_kokoro_voices() -> List[Dict[str, Any]]:
             disp_name = f"🎙️ {clean_name}"
             lang = "en"
 
+        is_cloned = False
+        try:
+            from app import config
+            cloned_path = Path(config.APP_DIR) / "models" / "kokoro" / "cloned_voices" / f"{name}.pt"
+            if cloned_path.exists():
+                is_cloned = True
+        except:
+            pass
+
         results.append({
             "voice_id": name,
             "name": disp_name,
@@ -97,7 +118,8 @@ def get_kokoro_voices() -> List[Dict[str, Any]]:
             "gender": "Nữ" if name.startswith(("af_", "bf_", "zf_", "vi_mai", "vi_ngoc", "vi_diem", "vi_my", "vi_thuc")) else "Nam",
             "language": lang,
             "preview_url": "",
-            "description": f"Giọng Offline Kokoro Local ({name})"
+            "description": f"Giọng Offline Kokoro Local ({name})",
+            "is_cloned": is_cloned
         })
 
     return results
@@ -210,7 +232,13 @@ def generate_kokoro_tts(
     lang_code = get_language_code_from_voice(voice_id)
     model, device = _get_direct_model(lang_code=lang_code)
 
-    voice_path = get_safe_voice_path(voice_id)
+    from app import config
+    cloned_path = Path(config.APP_DIR) / "models" / "kokoro" / "cloned_voices" / f"{voice_id}.pt"
+    if cloned_path.exists():
+        voice_path = cloned_path
+    else:
+        voice_path = get_safe_voice_path(voice_id)
+        
     if not voice_path.exists():
         raise FileNotFoundError(f"Không tìm thấy file voice pack {voice_path}")
 

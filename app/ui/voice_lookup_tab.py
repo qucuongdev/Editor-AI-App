@@ -54,7 +54,12 @@ class VoiceLoaderThread(QThread):
                     if self.lang != "all" and v["language"].lower() != self.lang.lower():
                         continue
                     filtered.append(v)
-                self.loaded.emit(filtered, False, len(filtered), "")
+                total_count = len(filtered)
+                start_idx = (self.page - 1) * self.page_size
+                end_idx = start_idx + self.page_size
+                paged_voices = filtered[start_idx:end_idx]
+                has_more = end_idx < total_count
+                self.loaded.emit(paged_voices, has_more, total_count, "")
             except Exception as e:
                 self.loaded.emit([], False, 0, f"Lỗi khi tải giọng Kokoro: {e}")
             return
@@ -320,6 +325,7 @@ class VoiceLookupTab(QWidget):
         self.player.playbackStateChanged.connect(self._on_playback_state_changed)
 
         self.init_ui()
+        self.load_voices()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -383,8 +389,8 @@ class VoiceLookupTab(QWidget):
 
         # Bảng hiển thị danh sách giọng (6 cột)
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["Nền Tảng", "Tên Giọng", "Voice ID", "Giới Tính", "Ngôn Ngữ / Thẻ", "Thao Tác"])
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels(["Nền Tảng", "Tên Giọng", "Voice ID", "Giới Tính", "Ngôn Ngữ / Thẻ", "Thao Tác", ""])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
@@ -398,6 +404,7 @@ class VoiceLookupTab(QWidget):
         self.table.setColumnWidth(3, 80)
         self.table.setColumnWidth(4, 150)
         self.table.setColumnWidth(5, 220)
+        self.table.setColumnWidth(6, 70)
         self.table.horizontalHeader().setMinimumSectionSize(60)
         self.table.horizontalHeader().setStretchLastSection(False)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -576,8 +583,12 @@ class VoiceLookupTab(QWidget):
         self.update_pagination_ui()
 
         self.table.setRowCount(0)
+        
+        start_idx = (self.current_page - 1) * self.page_size + 1
+        v_headers = []
 
         for row, v in enumerate(voices):
+            v_headers.append(str(start_idx + row))
             v_id = str(v.get("voice_id", ""))
             name = v.get("name", "")
             provider = v.get("provider", "elevenlabs")
@@ -657,7 +668,24 @@ class VoiceLookupTab(QWidget):
             a_layout.addWidget(btn_copy)
 
             self.table.setCellWidget(row, 5, action_widget)
+            
+            delete_widget = QWidget()
+            d_layout = QHBoxLayout(delete_widget)
+            d_layout.setContentsMargins(4, 2, 4, 2)
+            d_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            if v.get('is_cloned'):
+                btn_delete = QPushButton('Xóa')
+                btn_delete.setObjectName('btn_danger')
+                btn_delete.setMinimumWidth(44)
+                btn_delete.setMaximumWidth(52)
+                btn_delete.setStyleSheet('background-color: #ef4444; color: white; border: none; border-radius: 4px;')
+                btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn_delete.clicked.connect(lambda _, vid=v_id: self.delete_cloned_voice(vid))
+                d_layout.addWidget(btn_delete)
+            self.table.setCellWidget(row, 6, delete_widget)
 
+        self.table.setVerticalHeaderLabels(v_headers)
+        
         if total_count > 0:
             start_idx = (self.current_page - 1) * self.page_size + 1
             end_idx = min(start_idx + len(voices) - 1, total_count)
@@ -708,3 +736,21 @@ class VoiceLookupTab(QWidget):
         clipboard = QGuiApplication.clipboard()
         clipboard.setText(text)
         self.lbl_status.setText(f"Đã sao chép Voice ID: {text}")
+
+    def delete_cloned_voice(self, voice_id: str):
+        from PyQt6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(self, 'Xác nhận xóa', f'Bạn có chắc muốn xóa giọng clone {voice_id} không?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            from app import config
+            from pathlib import Path
+            import os
+            try:
+                cloned_path = Path(config.APP_DIR) / 'models' / 'kokoro' / 'cloned_voices' / f'{voice_id}.pt'
+                if cloned_path.exists():
+                    os.remove(str(cloned_path))
+                    QMessageBox.information(self, 'Thành công', f'Đã xóa giọng {voice_id}')
+                    self.load_voices()
+                else:
+                    QMessageBox.warning(self, 'Lỗi', f'Không tìm thấy file {voice_id}.pt')
+            except Exception as e:
+                QMessageBox.warning(self, 'Lỗi', f'Không thể xóa: {e}')

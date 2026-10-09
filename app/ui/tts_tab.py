@@ -797,8 +797,8 @@ class TTSTab(QWidget):
     def on_subtab_changed(self, index: int):
         """Khi người dùng bấm sang subtab Tra cứu Voice, tự động nạp danh sách nếu chưa có."""
         if index == 1 and self.voice_lookup_tab.table.rowCount() == 0:
-            if config.VIBI_API_KEY and len(config.VIBI_API_KEY.strip()) > 0:
-                self.voice_lookup_tab.load_voices()
+            
+            self.voice_lookup_tab.load_voices()
 
     def _on_st_slider_changed(self, v: int):
         provider = self.combo_provider.currentData() or "elevenlabs"
