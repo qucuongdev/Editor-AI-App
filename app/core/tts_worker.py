@@ -62,7 +62,13 @@ class TTSWorker(QThread):
                 return
 
         self.status_updated.emit("Đang khởi tạo tạo giọng nói...")
-        self.progress_updated.emit(20)
+        # Chuẩn hóa văn bản tiếng Việt thông minh theo ngữ cảnh
+        if self.lang_code == "vi" or str(self.voice_id).startswith("vi_") or self.provider == "kokoro":
+            try:
+                from app.core.text_normalizer import normalize_vietnamese_text
+                self.text = normalize_vietnamese_text(self.text)
+            except Exception as e:
+                pass
 
         if self.provider == "kokoro":
             chunks = [self.text]

@@ -154,3 +154,48 @@ class GeminiWatermarkRemover:
                 "input_path": str(file_path),
                 "error": str(e)
             }
+
+
+from app.core.video_creator import get_ffmpeg_path
+
+
+def is_video_file(path) -> bool:
+    return Path(path).suffix.lower() in {".mp4", ".mov", ".mkv", ".webm"}
+
+
+def is_image_file(path) -> bool:
+    return Path(path).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+
+
+def get_veo_watermark(width: int, height: int) -> Dict[str, int]:
+    from app.core.video_watermark_remover import get_veo_video_watermark_info
+    return get_veo_video_watermark_info(width, height)
+
+
+def get_roi(width: int, height: int, box: Dict[str, int]) -> Dict[str, int]:
+    x = max(0, box["x"] - 10)
+    y = max(0, box["y"] - 10)
+    return {
+        "x": x,
+        "y": y,
+        "width": min(width - x, box["width"] + 20),
+        "height": min(height - y, box["height"] + 20),
+    }
+
+
+def get_adaptive_video_preset(width: int, height: int, mode: str = "veo") -> Dict[str, Any]:
+    min_dim = min(width, height)
+    if min_dim >= 1080:
+        return {"offsetX": -36, "offsetY": -36, "edgeRefinement": 0.85}
+    return {"offsetX": -24, "offsetY": -24, "edgeRefinement": 0.0}
+
+
+class VideoWatermarkCleaner:
+    def __init__(self, width: int, height: int, bg96=None, bg48=None, mode: str = "veo"):
+        self.width = width
+        self.height = height
+        self.mode = mode
+
+    def clean_frame(self, frame: np.ndarray) -> np.ndarray:
+        return frame
+

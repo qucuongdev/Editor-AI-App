@@ -66,7 +66,39 @@ class VoiceLoaderThread(QThread):
 
         client = VibiClient()
         if not client.is_configured():
-            self.loaded.emit([], False, 0, "Chưa cấu hình Voice API Key! Vào Cài đặt để nhập Key.")
+            # Fallback hiển thị danh sách giọng có sẵn để người dùng vẫn xem và dùng được
+            provider_map = {
+                "elevenlabs_default": "elevenlabs",
+                "elevenlabs_shared": "elevenlabs",
+                "minimax_system": "minimax",
+                "capcut_system": "capcut",
+                "community_voices": "elevenlabs",
+            }
+            prov = provider_map.get(self.source, "elevenlabs")
+            from app.core.preset_voices import get_preset_voices
+            presets = get_preset_voices(prov)
+            q = self.search_query.lower()
+            filtered = []
+            for p in presets:
+                if q and (q not in p["name"].lower() and q not in p["voice_id"].lower() and q not in p.get("lang", "").lower()):
+                    continue
+                if self.gender != "all":
+                    gen_str = "nữ" if self.gender.lower() in ("female", "nữ") else "nam"
+                    if p.get("gender", "").lower() != gen_str:
+                        continue
+                if self.lang != "all" and p.get("lang", "").lower() != self.lang.lower():
+                    continue
+                filtered.append({
+                    "voice_id": p["voice_id"],
+                    "name": p["name"],
+                    "provider": prov,
+                    "provider_display": prov.capitalize(),
+                    "gender": p.get("gender", "-"),
+                    "language": p.get("lang", "vi"),
+                    "preview_url": "",
+                    "description": f"Giọng có sẵn ({p['name']})"
+                })
+            self.loaded.emit(filtered, False, len(filtered), "")
             return
 
         try:
@@ -338,9 +370,9 @@ class VoiceLookupTab(QWidget):
 
         # Nguồn giọng
         self.combo_source = QComboBox()
+        self.combo_source.addItem("⚡ ElevenLabs (Mặc định)", "elevenlabs_default")
         self.combo_source.addItem("🌸 Kokoro Local (Offline)", "kokoro_local")
         self.combo_source.addItem("🌐 Giọng Phổ Biến", "community_voices")
-        self.combo_source.addItem("⚡ ElevenLabs (Mặc định)", "elevenlabs_default")
         self.combo_source.addItem("⚡ ElevenLabs (Thư viện cộng đồng)", "elevenlabs_shared")
         self.combo_source.addItem("🤖 MiniMax (Giọng hệ thống)", "minimax_system")
         self.combo_source.addItem("🎬 CapCut (Giọng hệ thống)", "capcut_system")
@@ -568,21 +600,30 @@ class VoiceLookupTab(QWidget):
         self.worker.start()
 
     def on_voices_loaded(self, voices: List[Dict[str, Any]], has_more: bool, total_count: int, err_msg: str):
-        self.btn_search.setEnabled(True)
-        self.progress_bar.setVisible(False)
-
-        if err_msg:
-            self.lbl_status.setText(f"Lỗi: {err_msg}")
-            QMessageBox.warning(self, "Lỗi tải danh sách giọng", err_msg)
-            self.update_pagination_ui()
+        try:
+            self.btn_search.setEnabled(True)
+            self.progress_bar.setVisible(False)
+        except RuntimeError:
             return
 
-        self.current_voices = voices
-        self.has_more = has_more
-        self.total_count = total_count
-        self.update_pagination_ui()
+        if err_msg:
+            try:
+                self.lbl_status.setText(f"Lỗi: {err_msg}")
+                QMessageBox.warning(self, "Lỗi tải danh sách giọng", err_msg)
+                self.update_pagination_ui()
+            except RuntimeError:
+                pass
+            return
 
-        self.table.setRowCount(0)
+        try:
+            self.current_voices = voices
+            self.has_more = has_more
+            self.total_count = total_count
+            self.update_pagination_ui()
+
+            self.table.setRowCount(0)
+        except RuntimeError:
+            return
         
         start_idx = (self.current_page - 1) * self.page_size + 1
         v_headers = []
@@ -597,101 +638,107 @@ class VoiceLookupTab(QWidget):
             lang = v.get("language") or "-"
             preview_url = v.get("preview_url") or ""
 
-            self.table.insertRow(row)
+            try:
+                self.table.insertRow(row)
 
-            # Cột 0: Nền tảng
-            item_prov = QTableWidgetItem(provider_disp)
-            item_prov.setForeground(Qt.GlobalColor.cyan)
-            item_prov.setToolTip(f"Nền tảng: {provider_disp}")
-            self.table.setItem(row, 0, item_prov)
+                # Cột 0: Nền tảng
+                item_prov = QTableWidgetItem(provider_disp)
+                item_prov.setForeground(Qt.GlobalColor.cyan)
+                item_prov.setToolTip(f"Nền tảng: {provider_disp}")
+                self.table.setItem(row, 0, item_prov)
 
-            # Cột 1: Tên Giọng
-            item_name = QTableWidgetItem(name)
-            item_name.setForeground(Qt.GlobalColor.white)
-            desc = v.get("description")
-            item_name.setToolTip(f"{name}\n{desc}" if desc else name)
-            self.table.setItem(row, 1, item_name)
+                # Cột 1: Tên Giọng
+                item_name = QTableWidgetItem(name)
+                item_name.setForeground(Qt.GlobalColor.white)
+                desc = v.get("description")
+                item_name.setToolTip(f"{name}\n{desc}" if desc else name)
+                self.table.setItem(row, 1, item_name)
 
-            # Cột 2: Voice ID
-            item_id = QTableWidgetItem(v_id)
-            item_id.setForeground(Qt.GlobalColor.yellow)
-            item_id.setToolTip(f"Voice ID: {v_id}\n(Click nút 'Copy' để sao chép)")
-            self.table.setItem(row, 2, item_id)
+                # Cột 2: Voice ID
+                item_id = QTableWidgetItem(v_id)
+                item_id.setForeground(Qt.GlobalColor.yellow)
+                item_id.setToolTip(f"Voice ID: {v_id}\n(Click nút 'Copy' để sao chép)")
+                self.table.setItem(row, 2, item_id)
 
-            # Cột 3: Giới tính
-            item_gender = QTableWidgetItem(gender)
-            item_gender.setToolTip(f"Giới tính: {gender}")
-            self.table.setItem(row, 3, item_gender)
+                # Cột 3: Giới tính
+                item_gender = QTableWidgetItem(gender)
+                item_gender.setToolTip(f"Giới tính: {gender}")
+                self.table.setItem(row, 3, item_gender)
 
-            # Cột 4: Ngôn ngữ / Thẻ
-            item_lang = QTableWidgetItem(lang)
-            item_lang.setToolTip(f"Ngôn ngữ / Thẻ:\n{lang}")
-            self.table.setItem(row, 4, item_lang)
+                # Cột 4: Ngôn ngữ / Thẻ
+                item_lang = QTableWidgetItem(lang)
+                item_lang.setToolTip(f"Ngôn ngữ / Thẻ:\n{lang}")
+                self.table.setItem(row, 4, item_lang)
 
-            # Cột 5: Thao tác (Nghe thử, Dùng giọng, Copy ID)
-            action_widget = QWidget()
-            a_layout = QHBoxLayout(action_widget)
-            a_layout.setContentsMargins(4, 2, 4, 2)
-            a_layout.setSpacing(4)
-            a_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                # Cột 5: Thao tác (Nghe thử, Dùng giọng, Copy ID)
+                action_widget = QWidget()
+                a_layout = QHBoxLayout(action_widget)
+                a_layout.setContentsMargins(4, 2, 4, 2)
+                a_layout.setSpacing(4)
+                a_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-            # Nút Nghe thử
-            btn_play = QPushButton("▶ Nghe")
-            btn_play.setObjectName("btn_subtle")
-            btn_play.setMinimumWidth(60)
-            btn_play.setMaximumWidth(68)
-            btn_play.setCursor(Qt.CursorShape.PointingHandCursor)
-            if preview_url:
-                btn_play.clicked.connect(lambda _, u=preview_url, b=btn_play: self.toggle_preview(u, b))
-            else:
-                btn_play.setEnabled(False)
-                btn_play.setToolTip("Không có file âm thanh mẫu.")
+                # Nút Nghe thử
+                btn_play = QPushButton("▶ Nghe")
+                btn_play.setObjectName("btn_subtle")
+                btn_play.setMinimumWidth(60)
+                btn_play.setMaximumWidth(68)
+                btn_play.setCursor(Qt.CursorShape.PointingHandCursor)
+                if preview_url:
+                    btn_play.clicked.connect(lambda _, u=preview_url, b=btn_play: self.toggle_preview(u, b))
+                else:
+                    btn_play.setEnabled(False)
+                    btn_play.setToolTip("Không có file âm thanh mẫu.")
 
-            # Nút Dùng giọng
-            btn_use = QPushButton("Dùng giọng")
-            btn_use.setObjectName("btn_primary")
-            btn_use.setMinimumWidth(74)
-            btn_use.setMaximumWidth(82)
-            btn_use.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_use.clicked.connect(lambda _, vid=v_id, vn=name, p=provider, l=lang: self.use_voice(vid, vn, p, l))
+                # Nút Dùng giọng
+                btn_use = QPushButton("Dùng giọng")
+                btn_use.setObjectName("btn_primary")
+                btn_use.setMinimumWidth(74)
+                btn_use.setMaximumWidth(82)
+                btn_use.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn_use.clicked.connect(lambda _, vid=v_id, vn=name, p=provider, l=lang: self.use_voice(vid, vn, p, l))
 
-            # Nút Copy ID
-            btn_copy = QPushButton("Copy")
-            btn_copy.setObjectName("btn_subtle")
-            btn_copy.setMinimumWidth(44)
-            btn_copy.setMaximumWidth(52)
-            btn_copy.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_copy.clicked.connect(lambda _, vid=v_id: self.copy_id(vid))
+                # Nút Copy ID
+                btn_copy = QPushButton("Copy")
+                btn_copy.setObjectName("btn_subtle")
+                btn_copy.setMinimumWidth(44)
+                btn_copy.setMaximumWidth(52)
+                btn_copy.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn_copy.clicked.connect(lambda _, vid=v_id: self.copy_id(vid))
 
-            a_layout.addWidget(btn_play)
-            a_layout.addWidget(btn_use)
-            a_layout.addWidget(btn_copy)
+                a_layout.addWidget(btn_play)
+                a_layout.addWidget(btn_use)
+                a_layout.addWidget(btn_copy)
 
-            self.table.setCellWidget(row, 5, action_widget)
+                self.table.setCellWidget(row, 5, action_widget)
+                
+                delete_widget = QWidget()
+                d_layout = QHBoxLayout(delete_widget)
+                d_layout.setContentsMargins(4, 2, 4, 2)
+                d_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                if v.get('is_cloned'):
+                    btn_delete = QPushButton('Xóa')
+                    btn_delete.setObjectName('btn_danger')
+                    btn_delete.setMinimumWidth(44)
+                    btn_delete.setMaximumWidth(52)
+                    btn_delete.setStyleSheet('background-color: #ef4444; color: white; border: none; border-radius: 4px;')
+                    btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
+                    btn_delete.clicked.connect(lambda _, vid=v_id: self.delete_cloned_voice(vid))
+                    d_layout.addWidget(btn_delete)
+                self.table.setCellWidget(row, 6, delete_widget)
+            except RuntimeError:
+                return
+
+        try:
+            self.table.setVerticalHeaderLabels(v_headers)
             
-            delete_widget = QWidget()
-            d_layout = QHBoxLayout(delete_widget)
-            d_layout.setContentsMargins(4, 2, 4, 2)
-            d_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            if v.get('is_cloned'):
-                btn_delete = QPushButton('Xóa')
-                btn_delete.setObjectName('btn_danger')
-                btn_delete.setMinimumWidth(44)
-                btn_delete.setMaximumWidth(52)
-                btn_delete.setStyleSheet('background-color: #ef4444; color: white; border: none; border-radius: 4px;')
-                btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
-                btn_delete.clicked.connect(lambda _, vid=v_id: self.delete_cloned_voice(vid))
-                d_layout.addWidget(btn_delete)
-            self.table.setCellWidget(row, 6, delete_widget)
-
-        self.table.setVerticalHeaderLabels(v_headers)
-        
-        if total_count > 0:
-            start_idx = (self.current_page - 1) * self.page_size + 1
-            end_idx = min(start_idx + len(voices) - 1, total_count)
-            self.lbl_status.setText(f"Hiển thị {start_idx}–{end_idx} trên {total_count:,} giọng • {self.combo_source.currentText()}")
-        else:
-            self.lbl_status.setText(f"Hiển thị {len(voices)} giọng • {self.combo_source.currentText()}")
+            if total_count > 0:
+                start_idx = (self.current_page - 1) * self.page_size + 1
+                end_idx = min(start_idx + len(voices) - 1, total_count)
+                self.lbl_status.setText(f"Hiển thị {start_idx}–{end_idx} trên {total_count:,} giọng • {self.combo_source.currentText()}")
+            else:
+                self.lbl_status.setText(f"Hiển thị {len(voices)} giọng • {self.combo_source.currentText()}")
+        except RuntimeError:
+            return
 
     def toggle_preview(self, url: str, btn: QPushButton):
         """Phát hoặc dừng âm thanh nghe thử giọng nói."""
@@ -709,7 +756,9 @@ class VoiceLookupTab(QWidget):
         self.player.play()
 
     def stop_preview(self):
-        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+        if hasattr(self.player, "playbackState") and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.player.stop()
+        elif hasattr(self.player, "stop") and not hasattr(self.player, "playbackState"):
             self.player.stop()
         if self.current_preview_btn:
             self.current_preview_btn.setText("▶ Nghe")

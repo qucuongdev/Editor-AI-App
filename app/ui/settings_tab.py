@@ -89,7 +89,7 @@ class SettingsTab(QWidget):
         lbl_k.setProperty("class", "section_label")
         lbl_k.setFixedWidth(90)
 
-        self.edit_key = QLineEdit(config.settings.VIBI_API_KEY)
+        self.edit_key = QLineEdit(config.VIBI_API_KEY)
         self.edit_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.edit_key.setPlaceholderText("Nhập Voice API Key...")
 
@@ -174,7 +174,7 @@ class SettingsTab(QWidget):
         lbl_dir.setProperty("class", "section_label")
         lbl_dir.setFixedWidth(160)
 
-        self.lbl_dir_path = QLabel(str(config.settings.PROJECTS_DIR))
+        self.lbl_dir_path = QLabel(str(config.PROJECTS_DIR))
         self.lbl_dir_path.setStyleSheet("color: #60a5fa; font-size: 12px;")
 
         self.btn_change_dir = QPushButton("Thay đổi...")
@@ -192,7 +192,7 @@ class SettingsTab(QWidget):
         layout.addWidget(pref_panel)
         layout.addStretch()
 
-        if config.settings.VIBI_API_KEY:
+        if config.VIBI_API_KEY:
             self.check_account()
 
     def toggle_key_visibility(self):
@@ -245,6 +245,7 @@ class SettingsTab(QWidget):
         if success:
             if pending_api_key == checked_key:
                 config.save_setting("VIBI_API_KEY", pending_api_key)
+                config.VIBI_API_KEY = pending_api_key
                 config.settings.VIBI_API_KEY = pending_api_key
                 self.api_key_saved.emit(pending_api_key)
                 QMessageBox.information(
@@ -279,18 +280,19 @@ class SettingsTab(QWidget):
     def change_projects_dir(self):
         """Cho phép user chọn thư mục lưu projects mới."""
         folder = QFileDialog.getExistingDirectory(
-            self, "Chọn đường dẫn lưu Projects", str(config.settings.PROJECTS_DIR)
+            self, "Chọn đường dẫn lưu Projects", str(config.PROJECTS_DIR)
         )
         if folder:
             p = Path(folder)
             p.mkdir(parents=True, exist_ok=True)
+            config.PROJECTS_DIR = p
             config.settings.PROJECTS_DIR = p
             config.save_setting("PROJECTS_DIR", str(p))
             self.lbl_dir_path.setText(str(p))
 
     def open_projects_dir(self):
         """Mở thư mục chứa projects trong File Explorer."""
-        target = config.settings.PROJECTS_DIR
+        target = config.PROJECTS_DIR
         try:
             open_path(target)
         except Exception as e:

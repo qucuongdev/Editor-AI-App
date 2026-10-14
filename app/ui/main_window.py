@@ -188,7 +188,11 @@ class MainWindow(QMainWindow):
             except (OSError, RuntimeError, ValueError) as error:
                 QMessageBox.warning(self, "Không thể cài cập nhật", str(error))
                 event.ignore()
-                return
+        if hasattr(self, "_update_timer") and self._update_timer.isActive():
+            self._update_timer.stop()
+        if hasattr(self, "_update_checker") and self._update_checker and self._update_checker.isRunning():
+            self._update_checker.quit()
+            self._update_checker.wait(500)
         self.tts_tab.flush_standalone_state()
         super().closeEvent(event)
 

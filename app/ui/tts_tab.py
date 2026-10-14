@@ -27,6 +27,11 @@ from app.ui.widgets import ToggleSwitch
 from app.ui.components.loading_spinner import LoadingSpinner
 from app.ui.components.voice_selector import VoiceSelectorComboBox
 from app.core.tts_worker import TTSWorker
+from app.core.preset_voices import (
+    get_preset_voices,
+    get_default_voice_for_provider,
+    find_voice_name,
+)
 
 
 
@@ -50,14 +55,16 @@ class TTSTab(QWidget):
         self.current_run_dir: Optional[Path] = None
         self.credit_balance: Optional[int] = None
         self.voice_ids_by_provider: Dict[str, str] = {
-            "elevenlabs": "",
-            "minimax": "",
-            "capcut": "",
+            "elevenlabs": str(getattr(config.settings, "DEFAULT_VIBI_VOICE_ID", "6adFm46eyy74snVn6YrT")),
+            "kokoro": "vi_mai_linh",
+            "minimax": "moss_audio_01",
+            "capcut": "vi_female_1",
         }
         self.voice_names_by_provider: Dict[str, str] = {
-            "elevenlabs": "",
-            "minimax": "",
-            "capcut": "",
+            "elevenlabs": "🇻🇳 Mai Anh (Nữ - Truyền cảm)",
+            "kokoro": "🇻🇳 Mai Linh (Nữ - Truyền cảm)",
+            "minimax": "🇻🇳 Nam Trầm Ấm (MiniMax)",
+            "capcut": "🇻🇳 Nữ Miền Bắc (CapCut)",
         }
         self._active_voice_provider = "elevenlabs"
         self._restoring_standalone = False
@@ -165,9 +172,16 @@ class TTSTab(QWidget):
             if "speed" in state:
                 self.slider_sp.setValue(int(state["speed"]))
             self.chk_srt.setChecked(bool(state.get("export_srt", True)))
-            output_dir = state.get("output_dir")
-            if output_dir and output_dir != config.LEGACY_TTS_DOWNLOADS_DIR:
-                self.standalone_output_dir = Path(output_dir)
+            saved_dir = state.get("output_dir")
+            old_c_drive_tts = config.USER_DOWNLOADS_DIR / "tts"
+            if saved_dir:
+                if str(saved_dir) not in (
+                    str(config.LEGACY_TTS_DOWNLOADS_DIR),
+                    str(old_c_drive_tts),
+                ):
+                    self.standalone_output_dir = Path(saved_dir)
+                else:
+                    self.standalone_output_dir = config.TTS_DOWNLOADS_DIR
             self._update_output_path_label()
             self.tab_widget.blockSignals(True)
             self.tab_widget.setCurrentIndex(int(state.get("subtab", 0)))
@@ -387,27 +401,48 @@ class TTSTab(QWidget):
         self.combo_lang = QComboBox()
         self.combo_lang.addItems(["vi", "en", "ja", "ko", "zh", "fr", "de", "es"])
 
+        self.combo_provider.setFixedWidth(145)
+        self.combo_model.setFixedWidth(190)
+        self.combo_lang.setFixedWidth(75)
+
+        self.combo_provider.setMaxVisibleItems(8)
+        self.combo_model.setMaxVisibleItems(8)
+        self.combo_lang.setMaxVisibleItems(8)
+
         row1.addWidget(lbl_prov)
         row1.addWidget(self.combo_provider)
         row1.addSpacing(6)
         row1.addWidget(self.lbl_m)
-        row1.addWidget(self.combo_model, stretch=2)
+        row1.addWidget(self.combo_model)
+        row1.addSpacing(6)
         row1.addWidget(lbl_l)
         row1.addWidget(self.combo_lang)
+        row1.addStretch()
         cp_layout.addLayout(row1)
 
-        # Dòng 2: Voice ID và thao tác tra cứu
+        # Dòng 2: Giọng đọc có sẵn và thao tác tra cứu
         voice_row = QHBoxLayout()
         voice_row.setSpacing(8)
-        lbl_vid = QLabel("Voice ID:")
+        lbl_vid = QLabel("Giọng đọc:")
         lbl_vid.setProperty("class", "section_label")
         self.combo_voice = VoiceSelectorComboBox()
-        self.combo_voice.setToolTip("Bấm để mở tab Tra cứu Voice")
+        self.combo_voice.setMinimumWidth(280)
+        self.combo_voice.setMaximumWidth(360)
+        self.combo_voice.setMaxVisibleItems(8)
+        self.combo_voice.setToolTip("Chọn giọng đọc có sẵn hoặc tra cứu thêm trong thư viện")
         self.combo_voice.lookup_requested.connect(self.open_voice_lookup)
+        self.combo_voice.currentIndexChanged.connect(self._on_voice_combo_changed)
         self._display_selected_voice()
 
+        self.btn_lookup_voice = QPushButton("🔍 Tra cứu…")
+        self.btn_lookup_voice.setObjectName("btn_subtle")
+        self.btn_lookup_voice.setToolTip("Mở thư viện tra cứu giọng để nghe thử và tìm kiếm thêm nhiều giọng khác")
+        self.btn_lookup_voice.clicked.connect(self.open_voice_lookup)
+
         voice_row.addWidget(lbl_vid)
-        voice_row.addWidget(self.combo_voice, stretch=1)
+        voice_row.addWidget(self.combo_voice)
+        voice_row.addWidget(self.btn_lookup_voice)
+        voice_row.addStretch()
         cp_layout.addLayout(voice_row)
 
         # Dòng 3: Sliders & Phụ đề
@@ -633,7 +668,20 @@ class TTSTab(QWidget):
         self.request_voice_lookup.connect(self.open_voice_lookup)
 
     def open_voice_lookup(self):
-        """Chuyển sang tab tra cứu giọng nói và tự động tải nếu bảng còn trống."""
+        """Chuyển sang tab tra cứu giọng nói và đồng bộ nguồn theo provider hiện tại."""
+        provider_map = {
+            "elevenlabs": "elevenlabs_default",
+            "kokoro": "kokoro_local",
+            "minimax": "minimax_system",
+            "capcut": "capcut_system",
+        }
+        target_source = provider_map.get(self._active_voice_provider, "elevenlabs_default")
+        idx = self.voice_lookup_tab.combo_source.findData(target_source)
+        if idx >= 0:
+            if self.voice_lookup_tab.combo_source.currentIndex() != idx:
+                self.voice_lookup_tab.combo_source.setCurrentIndex(idx)
+            elif self.voice_lookup_tab.table.rowCount() == 0:
+                self.voice_lookup_tab.load_voices()
         self.tab_widget.setCurrentIndex(1)
 
     def on_subtab_changed(self, index: int):
@@ -653,7 +701,10 @@ class TTSTab(QWidget):
         self.lbl_sp_val.setText(f"{v / 100.0:.2f}x")
 
     def current_voice_id(self) -> str:
-        return str(self.combo_voice.currentData() or "").strip()
+        data = self.combo_voice.currentData()
+        if data and data != "__LOOKUP__":
+            return str(data).strip()
+        return str(self.voice_ids_by_provider.get(self._active_voice_provider, "")).strip()
 
     def _voice_ids_snapshot(self) -> Dict[str, str]:
         return dict(self.voice_ids_by_provider)
@@ -662,46 +713,104 @@ class TTSTab(QWidget):
         return dict(self.voice_names_by_provider)
 
     def _display_selected_voice(self) -> None:
-        voice_id = self.voice_ids_by_provider.get(self._active_voice_provider, "")
-        voice_name = self.voice_names_by_provider.get(self._active_voice_provider, "")
+        provider = self._active_voice_provider
+        current_id = str(self.voice_ids_by_provider.get(provider, "")).strip()
+        current_name = str(self.voice_names_by_provider.get(provider, "")).strip()
+
+        if not current_id:
+            def_id, def_name = get_default_voice_for_provider(provider)
+            current_id = def_id
+            current_name = def_name
+            self.voice_ids_by_provider[provider] = current_id
+            self.voice_names_by_provider[provider] = current_name
+
+        presets = get_preset_voices(provider)
+
         self.combo_voice.blockSignals(True)
         self.combo_voice.clear()
-        self.combo_voice.addItem(voice_name or "Chọn giọng nói…", voice_id)
+
+        found_idx = -1
+        for idx, item in enumerate(presets):
+            v_id = item["voice_id"]
+            v_name = item["name"]
+            self.combo_voice.addItem(v_name, v_id)
+            if current_id and v_id == current_id:
+                found_idx = idx
+
+        # Nếu current_id là custom (không có trong preset), chèn lên đầu
+        if current_id and found_idx == -1:
+            disp_name = current_name or f"🎙️ {current_id}"
+            self.combo_voice.insertItem(0, disp_name, current_id)
+            found_idx = 0
+
+        # Thêm mục tra cứu thêm giọng ở cuối danh sách
+        self.combo_voice.addItem("🔍 Tra cứu thêm giọng khác…", "__LOOKUP__")
+
+        if found_idx >= 0:
+            self.combo_voice.setCurrentIndex(found_idx)
+        elif self.combo_voice.count() > 1:
+            self.combo_voice.setCurrentIndex(0)
+            self.voice_ids_by_provider[provider] = str(self.combo_voice.currentData())
+            self.voice_names_by_provider[provider] = self.combo_voice.itemText(0)
+
         self.combo_voice.blockSignals(False)
+
+    def _on_voice_combo_changed(self, index: int):
+        if index < 0:
+            return
+        data = self.combo_voice.itemData(index)
+        if data == "__LOOKUP__":
+            self.open_voice_lookup()
+            self._display_selected_voice()
+            return
+
+        if data:
+            provider = self._active_voice_provider
+            self.voice_ids_by_provider[provider] = str(data).strip()
+            self.voice_names_by_provider[provider] = self.combo_voice.itemText(index)
+            self.lbl_status.setText(f"✓ Đã chọn giọng: {self.combo_voice.itemText(index)}")
+            self._schedule_standalone_save()
 
     def _restore_voice_ids(self, settings: Dict[str, Any]) -> None:
         restored = {
-            "elevenlabs": "",
+            "elevenlabs": str(getattr(config.settings, "DEFAULT_VIBI_VOICE_ID", "6adFm46eyy74snVn6YrT")),
             "kokoro": "vi_mai_linh",
-            "minimax": "",
-            "capcut": "",
+            "minimax": "moss_audio_01",
+            "capcut": "vi_female_1",
         }
         restored_names = {
-            "elevenlabs": "",
-            "kokoro": "🇻🇳 Mai Linh (Tiếng Việt)",
-            "minimax": "",
-            "capcut": "",
+            "elevenlabs": "🇻🇳 Mai Anh (Nữ - Truyền cảm)",
+            "kokoro": "🇻🇳 Mai Linh (Nữ - Truyền cảm)",
+            "minimax": "🇻🇳 Nam Trầm Ấm (MiniMax)",
+            "capcut": "🇻🇳 Nữ Miền Bắc (CapCut)",
         }
         saved_voice_ids = settings.get("voice_ids")
         if isinstance(saved_voice_ids, dict):
             for provider in restored:
                 value = saved_voice_ids.get(provider)
-                if value is not None:
+                if value is not None and str(value).strip():
                     restored[provider] = str(value).strip()
 
         saved_voice_names = settings.get("voice_names")
         if isinstance(saved_voice_names, dict):
             for provider in restored_names:
                 value = saved_voice_names.get(provider)
-                if value is not None:
+                if value is not None and str(value).strip():
                     restored_names[provider] = str(value).strip()
 
         saved_provider = str(settings.get("provider", "elevenlabs"))
-        if "voice_id" in settings and not (
-            isinstance(saved_voice_ids, dict) and saved_provider in saved_voice_ids
-        ):
-            if saved_provider in restored:
-                restored[saved_provider] = str(settings["voice_id"]).strip()
+        if "voice_id" in settings and str(settings["voice_id"]).strip():
+            if not (
+                isinstance(saved_voice_ids, dict) and saved_provider in saved_voice_ids
+            ):
+                if saved_provider in restored:
+                    restored[saved_provider] = str(settings["voice_id"]).strip()
+
+        for prov, vid in restored.items():
+            if not restored_names.get(prov) or restored_names[prov] == vid:
+                name = find_voice_name(prov, vid)
+                if name:
+                    restored_names[prov] = name
 
         self.voice_ids_by_provider = restored
         self.voice_names_by_provider = restored_names
@@ -802,9 +911,15 @@ class TTSTab(QWidget):
         self._schedule_standalone_save()
 
     def set_selected_voice_id(self, voice_id: str, voice_name: Optional[str] = None):
-        self.voice_ids_by_provider[self._active_voice_provider] = voice_id.strip()
-        self.voice_names_by_provider[self._active_voice_provider] = (voice_name or "").strip()
+        provider = self._active_voice_provider
+        clean_id = voice_id.strip()
+        self.voice_ids_by_provider[provider] = clean_id
+        disp_name = (voice_name or "").strip()
+        if not disp_name:
+            disp_name = find_voice_name(provider, clean_id) or clean_id
+        self.voice_names_by_provider[provider] = disp_name
         self._display_selected_voice()
+        self.lbl_status.setText(f"✓ Đã chọn giọng: {disp_name}")
 
     def start_tts(self):
         text = self.txt_input.toPlainText().strip()

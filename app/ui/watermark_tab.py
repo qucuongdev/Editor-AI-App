@@ -374,6 +374,7 @@ class WatermarkTab(QWidget):
         self.btn_clear_all = QPushButton("Xóa hết")
         self.btn_clear_all.setObjectName("btn_subtle")
         self.btn_clear_all.clicked.connect(self.clear_file_list)
+        self.action_clear = self.btn_clear_all
 
         list_box.addWidget(lbl_list_title)
         list_box.addWidget(self.lbl_file_count)

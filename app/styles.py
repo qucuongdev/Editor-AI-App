@@ -7,10 +7,22 @@ Design Principles:
 """
 
 from PyQt6.QtGui import QPalette, QColor
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QProxyStyle, QStyle
 
 import os
 from pathlib import Path
+
+
+class DarkAppStyle(QProxyStyle):
+    """Proxy style để vô hiệu hóa SH_ComboBox_Popup của Fusion style,
+    đảm bảo QComboBox mở dạng listbox cuộn gọn gàng theo maxVisibleItems
+    thay vì bung menu toàn màn hình.
+    """
+    def styleHint(self, hint, option=None, widget=None, returnData=None):
+        if hint == QStyle.StyleHint.SH_ComboBox_Popup:
+            return 0
+        return super().styleHint(hint, option, widget, returnData)
+
 
 def _get_qss_path():
     base_dir = Path(__file__).resolve().parent.parent
@@ -25,7 +37,7 @@ def load_qss():
 
 def setup_theme(app: QApplication):
     """Áp dụng theme gọn gàng, tối ưu thị giác và hiệu năng."""
-    app.setStyle("Fusion")
+    app.setStyle(DarkAppStyle("Fusion"))
 
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor("#0e1014"))

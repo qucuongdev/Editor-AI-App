@@ -309,6 +309,7 @@ QLineEdit:disabled, QTextEdit:disabled {
 }
 
 QComboBox {
+    combobox-popup: 0;
     background-color: #14151a;
     border: 1px solid #282a33;
     border-radius: 6px;
@@ -332,13 +333,15 @@ QComboBox QAbstractItemView {
     border-radius: 6px;
     selection-background-color: #2563eb;
     selection-color: #ffffff;
-    padding: 4px;
+    padding: 2px;
     outline: none;
+    max-height: 240px;
 }
 
 QComboBox QAbstractItemView::item {
-    min-height: 30px;
-    padding: 4px 10px;
+    min-height: 22px;
+    height: 26px;
+    padding: 2px 8px;
     border-radius: 4px;
 }
 

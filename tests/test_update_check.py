@@ -1,5 +1,6 @@
 import unittest
 import sys
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
@@ -209,7 +210,7 @@ class UpdateDownloadUiTests(unittest.TestCase):
             window._download_thread.finished.emit()
             dialog.later_button.click()
             close.assert_not_called()
-            self.assertEqual(str(window._staged_update), "/tmp/EditorVideoApp")
+            self.assertEqual(Path(window._staged_update), Path("/tmp/EditorVideoApp"))
         window._update_dialog = None
         window._staged_update = None
         window.close()

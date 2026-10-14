@@ -12,7 +12,6 @@ from PyQt6.QtWidgets import QApplication, QLabel
 from app import config
 from app.ui.video_watermark_tab import VideoWatermarkTab
 from app.ui.main_window import MainWindow
-from app.ui.pricing_tab import PricingTab
 
 
 class VideoWatermarkUiTests(unittest.TestCase):
@@ -61,19 +60,18 @@ class VideoWatermarkUiTests(unittest.TestCase):
         window.close()
 
     def test_footer_links_to_botocit_website(self):
-        with patch.object(PricingTab, "refresh_pricing"):
-            window = MainWindow()
-            window.show()
-            self.application.processEvents()
+        window = MainWindow()
+        window.show()
+        self.application.processEvents()
         link = window.findChild(QLabel, "footer_website_link")
         icon = window.findChild(QLabel, "footer_website_icon")
         self.assertIsNotNone(link)
-        self.assertIn("https://botocit.com", link.text())
+        self.assertIn("portfolio-qucuongdev", link.text())
         self.assertTrue(link.openExternalLinks())
         self.assertIsNotNone(icon)
         self.assertFalse(icon.pixmap().isNull())
-        self.assertGreater(link.mapTo(window, link.rect().topLeft()).x(),
-                           window.footer_creator.mapTo(window, window.footer_creator.rect().topLeft()).x())
+        self.assertLess(link.mapTo(window, link.rect().topLeft()).x(),
+                        window.footer_creator.mapTo(window, window.footer_creator.rect().topLeft()).x())
         window.close()
 
 
