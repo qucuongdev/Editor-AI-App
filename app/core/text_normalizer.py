@@ -16,9 +16,22 @@ def normalize_vietnamese_text(text: str) -> str:
         return text
 
     # 1. Ký hiệu công nghệ, giải trí & âm nhạc
-    # Giữ nguyên các thuật ngữ viết hoa công nghệ để không bị biến thành chữ thường
-    text = re.sub(r'\bAI\b', 'A.I', text)
+    # Chỉ áp dụng cho các thuật ngữ viết hoa chính xác (Case-sensitive), bảo toàn từ tiếng Việt viết thường
+    text = re.sub(r'\bAI\b', 'ây ai', text)
     text = re.sub(r'\bIT\b', 'ai-ti', text)
+    text = re.sub(r'\bUI\b', 'u-ai', text)
+    text = re.sub(r'\bUX\b', 'u-ích', text)
+    text = re.sub(r'\bID\b', 'ai-đi', text)
+    text = re.sub(r'\bIP\b', 'ai-pi', text)
+    text = re.sub(r'\bPC\b', 'pi-xi', text)
+    text = re.sub(r'\bCV\b', 'xi-vi', text)
+    text = re.sub(r'\bPR\b', 'pi-a', text)
+    text = re.sub(r'\bCEO\b', 'xi-i-ô', text)
+    text = re.sub(r'\bCTO\b', 'xi-ti-ô', text)
+    text = re.sub(r'\bCFO\b', 'xi-ép-ô', text)
+    text = re.sub(r'\bHR\b', 'hát-a', text)
+    text = re.sub(r'\bQA\b', 'qui-ây', text)
+    text = re.sub(r'\bQC\b', 'qui-xi', text)
     text = re.sub(r'\bATM\b', 'A.T.M', text)
     text = re.sub(r'\bOTP\b', 'O.T.P', text)
     text = re.sub(r'\bSMS\b', 'S.M.S', text)

@@ -78,7 +78,7 @@ class TestTextNormalizer(unittest.TestCase):
         self.assertEqual(normalize_vietnamese_text("10kg gạo"), "10 ki lô gam gạo")
         self.assertEqual(normalize_vietnamese_text("10km"), "10 ki lô mét")
         self.assertEqual(normalize_vietnamese_text("lúc 8h30"), "lúc 8 giờ 30 phút")
-        self.assertEqual(normalize_vietnamese_text("công nghệ AI"), "công nghệ A.I")
+        self.assertEqual(normalize_vietnamese_text("công nghệ AI"), "công nghệ ây ai")
 
     def test_social_relations_and_communication_expansion(self):
         """ny, ck, vk, cr, bx, ox, ng, hnay, hqua, tks, cx, ms, ch, r."""
@@ -174,7 +174,13 @@ class TestTextNormalizer(unittest.TestCase):
         self.assertEqual(normalize_vietnamese_text("ai đó đang làm gì"), "ai đó đang làm gì")
         self.assertEqual(normalize_vietnamese_text("có ai ở đây không"), "có ai ở đây không")
         self.assertEqual(normalize_vietnamese_text("Ai cũng biết"), "Ai cũng biết")
-        self.assertEqual(normalize_vietnamese_text("công nghệ AI"), "công nghệ A.I")
+        self.assertEqual(normalize_vietnamese_text("công nghệ AI"), "công nghệ ây ai")
+        self.assertEqual(normalize_vietnamese_text("thiết kế UI và UX"), "thiết kế u-ai và u-ích")
+        self.assertEqual(normalize_vietnamese_text("nhập số ID"), "nhập số ai-đi")
+        self.assertEqual(normalize_vietnamese_text("địa chỉ IP"), "địa chỉ ai-pi")
+        self.assertEqual(normalize_vietnamese_text("nộp CV ứng tuyển"), "nộp xi-vi ứng tuyển")
+        self.assertEqual(normalize_vietnamese_text("chiến dịch PR"), "chiến dịch pi-a")
+        self.assertEqual(normalize_vietnamese_text("gặp CEO và CTO"), "gặp xi-i-ô và xi-ti-ô")
 
         # 2. Kokoro Vietnamese Normalization & Phonemization
         try:

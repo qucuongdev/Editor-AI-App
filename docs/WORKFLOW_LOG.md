@@ -354,13 +354,17 @@
    - Tách riêng `r'\bAI\b': 'ây ai'` thành xử lý **Case-Sensitive** nghiêm ngặt (chỉ thay thế khi viết hoa cả hai chữ cái `AI`).
    - Loại bỏ hoàn toàn `r'\bai\b'` khỏi `tech_map`.
    - Bảo toàn 100% từ `ai` thường và `Ai` đầu câu trong tiếng Việt.
-2. **Kiểm tra phát âm G2P thực tế**:
+2. **Khắc phục triệt để lỗi phát âm "ạc ai" do dấu chấm ngắt câu (`app/core/text_normalizer.py`)**:
+   - Trước đây `AI` bị đổi thành `A.I` (chứa dấu chấm giữa 2 chữ cái). Khi đưa vào pipeline G2P, chữ `A.` bị chuyển thành âm ngắt `ɐ.` (glottal stop / âm giật họng nghe như *"ạc"*), tạo ra âm thanh *"ạc ai"*.
+   - Đã chuyển trực tiếp `AI` thành cụm từ phiên âm mượt mà `'ây ai'`.
+   - Đồng thời mở rộng chuẩn hóa các từ viết tắt công nghệ phổ biến (Case-Sensitive): `UI` -> `u-ai`, `UX` -> `u-ích`, `ID` -> `ai-đi`, `IP` -> `ai-pi`, `PC` -> `pi-xi`, `CV` -> `xi-vi`, `PR` -> `pi-a`, `CEO` -> `xi-i-ô`, `CTO` -> `xi-ti-ô`, `CFO` -> `xi-ép-ô`, `HR` -> `hát-a`, `QA` -> `qui-ây`, `QC` -> `qui-xi`.
+3. **Kiểm tra phát âm G2P thực tế**:
    - `ai đó` -> phát âm chuẩn tiếng Việt `ˈaːj dˈɔ↗` ("ai đó"), không có âm "ây".
    - `Ai đó đang gọi bạn` -> phát âm chuẩn tiếng Việt `ˈaːj dˈɔ↗...`.
-   - `công nghệ AI` -> phát âm chuẩn `ˈəɪ ˈaːj` ("công nghệ ây ai").
+   - `công nghệ AI` -> phát âm chuẩn mượt mà `ˈəɪ ˈaːj` ("công nghệ ây ai"), loại bỏ hoàn toàn âm "ạc".
 
 ### 3. Kết quả kiểm thử tự động:
-- **Unit Test (`tests/test_text_normalizer.py`)**: **17/17 tests PASS 100%** (bổ sung test case `test_ai_distinction_between_vietnamese_pronoun_and_tech_ai`).
-- **Toàn bộ Test Suite hệ thống (`python run_all_tests.py`)**: **135/135 tests PASS 100% (0 errors, 0 failures, 19 suites trong 49.08s)!**
+- **Unit Test (`tests/test_text_normalizer.py`)**: **17/17 tests PASS 100%**.
+- **Toàn bộ Test Suite hệ thống (`python run_all_tests.py`)**: **135/135 tests PASS 100% (0 errors, 0 failures, 19 suites trong 52.65s)!**
 
 
