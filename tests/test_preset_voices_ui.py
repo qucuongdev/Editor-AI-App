@@ -15,13 +15,18 @@ from app.core.preset_voices import (
     get_default_voice_for_provider,
     find_voice_name,
 )
+from PyQt6.QtMultimedia import QMediaPlayer as _RealQMediaPlayer
 from app.ui.tts_tab import TTSTab
 
 
 class _SilentMediaPlayer(QObject):
+    PlaybackState = _RealQMediaPlayer.PlaybackState
+    MediaStatus = _RealQMediaPlayer.MediaStatus
+
     positionChanged = pyqtSignal(int)
     durationChanged = pyqtSignal(int)
     playbackStateChanged = pyqtSignal(object)
+    mediaStatusChanged = pyqtSignal(object)
 
     def setAudioOutput(self, _output):
         pass
@@ -31,6 +36,29 @@ class _SilentMediaPlayer(QObject):
 
     def stop(self):
         pass
+
+    def play(self):
+        pass
+
+    def pause(self):
+        pass
+
+    def setPosition(self, _pos):
+        pass
+
+    def position(self):
+        return 0
+
+    def duration(self):
+        return 0
+
+    def playbackState(self):
+        from PyQt6.QtMultimedia import QMediaPlayer
+        return QMediaPlayer.PlaybackState.StoppedState
+
+    def mediaStatus(self):
+        from PyQt6.QtMultimedia import QMediaPlayer
+        return QMediaPlayer.MediaStatus.NoMedia
 
 
 class _SilentAudioOutput:
@@ -261,6 +289,64 @@ class TestPresetVoicesUI(unittest.TestCase):
         self.assertEqual(get_kokoro_language_code("bf_alice"), "b")
         self.assertEqual(get_kokoro_language_code("zf_xiaobei"), "z")
         self.assertEqual(get_kokoro_language_code("jf_alpha"), "j")
+
+    def test_btn_play_pause_resets_to_play_on_playback_stopped_and_end_of_media(self):
+        """Khi audio đọc hết hoặc dừng, nút phát phải tự động chuyển về 'Phát' và reset timer."""
+        from PyQt6.QtMultimedia import QMediaPlayer
+        tab = self._create_tab()
+
+        # Giả lập đang phát
+        tab.btn_play_pause.setEnabled(True)
+        tab.btn_play_pause.setText("Tạm dừng")
+        tab.slider_player.setRange(0, 5000)
+        tab.slider_player.setValue(5000)
+        tab.lbl_time_cur.setText("00:05")
+
+        # 1. Phát tín hiệu EndOfMedia
+        tab.on_player_media_status_changed(QMediaPlayer.MediaStatus.EndOfMedia)
+        self.assertEqual(tab.btn_play_pause.text(), "Phát")
+        self.assertEqual(tab.slider_player.value(), 0)
+        self.assertEqual(tab.lbl_time_cur.text(), "00:00")
+
+        # 2. Phát tín hiệu StoppedState
+        tab.btn_play_pause.setText("Tạm dừng")
+        tab.on_player_playback_state_changed(QMediaPlayer.PlaybackState.StoppedState)
+        self.assertEqual(tab.btn_play_pause.text(), "Phát")
+
+        # 3. Phát tín hiệu PausedState
+        tab.on_player_playback_state_changed(QMediaPlayer.PlaybackState.PausedState)
+        self.assertEqual(tab.btn_play_pause.text(), "Tiếp tục")
+
+        # 4. Phát tín hiệu PlayingState
+        tab.on_player_playback_state_changed(QMediaPlayer.PlaybackState.PlayingState)
+        self.assertEqual(tab.btn_play_pause.text(), "Tạm dừng")
+
+    def test_quick_voice_sample_preview_button_exists_and_triggers_worker(self):
+        """Nút nghe thử nhanh mẫu giọng tồn tại cạnh combo_voice và hoạt động chuẩn xác."""
+        tab = self._create_tab()
+        self.assertIsNotNone(tab.btn_sample_preview)
+        self.assertEqual(tab.btn_sample_preview.text(), "▶ Nghe thử")
+
+        # Giả lập bấm nghe thử
+        with patch.object(tab, "_sample_worker", None):
+            with patch("app.ui.tts_tab.VoicePreviewWorker.start") as mock_start:
+                tab.btn_sample_preview.click()
+                self.assertTrue(mock_start.called)
+                self.assertEqual(tab.btn_sample_preview.text(), "⏳ Đang tải...")
+
+    def test_quick_voice_sample_preview_resets_on_provider_or_voice_change(self):
+        """Khi đổi provider hoặc đổi giọng trong combobox, sample player dừng và nút reset về '▶ Nghe thử'."""
+        tab = self._create_tab()
+        tab.btn_sample_preview.setText("⏹ Dừng")
+
+        # Đổi giọng trong combobox
+        tab._on_voice_combo_changed(1)
+        self.assertEqual(tab.btn_sample_preview.text(), "▶ Nghe thử")
+
+        # Đổi provider
+        tab.btn_sample_preview.setText("⏹ Dừng")
+        tab.combo_provider.setCurrentIndex(tab.combo_provider.findData("kokoro"))
+        self.assertEqual(tab.btn_sample_preview.text(), "▶ Nghe thử")
 
 
 if __name__ == "__main__":

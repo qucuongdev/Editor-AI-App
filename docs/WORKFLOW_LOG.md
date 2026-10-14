@@ -296,3 +296,46 @@
 ### 3. Kết quả kiểm thử tự động:
 - **Unit Test UI (`tests/test_standalone_tools_ui.py`)**: **17/17 tests PASS 100%**.
 - **Toàn bộ Test Suite hệ thống (`python run_all_tests.py`)**: **131/131 tests PASS 100% (0 errors, 0 failures, 19 suites trong 49.01s)**!
+
+---
+
+## [2026-10-14 17:15] - Sửa Triệt Để Lỗi Nút Phát Kẹt "Tạm Dừng" & Bổ Sung Nút "Nghe Thử Nhanh Mẫu Giọng" (Quick Voice Sample Preview)
+
+### 1. Bối cảnh & Phản hồi Người Dùng:
+- Người dùng phản ánh:
+  1. *"trước hết cải tiến cái đầu tiên trước, với lại nút phát thì voice nói hết rồi vẫn thấy nút là tạm dừng chứ k phải là nút phát ấy"*
+- **Hai vấn đề cốt lõi cần giải quyết**:
+  - **Vấn đề 1 (Lỗi nút phát kẹt ở "Tạm dừng")**: Khi file âm thanh đã đọc hết (`EndOfMedia` hoặc `StoppedState`), nút phát vẫn kẹt text `"Tạm dừng"`. Nếu người dùng click lại, app không replay từ đầu mà có thể bị kẹt hoặc đơ do position ở cuối file.
+  - **Vấn đề 2 (Nghe thử nhanh mẫu giọng - Quick Voice Preview)**: Trước đây để nghe thử một giọng đọc, người dùng bắt buộc phải chuyển sang tab "Tra cứu Voice" hoặc phải gõ chữ rồi bấm "Nghe Thử (Preview)" (tốn credit và thời gian render). Cần thêm nút `▶ Nghe thử` ngay cạnh ô ComboBox chọn giọng đọc để nghe ngay 2-3s câu thoại mẫu có sẵn.
+
+### 2. Các giải pháp kỹ thuật đã triển khai:
+1. **Khắc phục triệt để lỗi nút phát audio (`app/ui/tts_tab.py`)**:
+   - Kết nối hai signal cốt lõi của `QMediaPlayer`: `playbackStateChanged` và `mediaStatusChanged`.
+   - Cài đặt `on_player_playback_state_changed`:
+     * `PlayingState` -> hiển thị `"Tạm dừng"`.
+     * `PausedState` -> hiển thị `"Tiếp tục"`.
+     * `StoppedState` -> hiển thị `"Phát"`.
+   - Cài đặt `on_player_media_status_changed`:
+     * Khi đạt trạng thái `EndOfMedia` (file đọc hết câu): Tự động đổi text nút thành `"Phát"`, reset vị trí slider về `0`, reset nhãn thời gian hiện tại về `"00:00"`, và gọi `player.setPosition(0)` để lần bấm sau phát lại từ đầu câu thoại.
+   - Sửa `toggle_play_pause`: Tự động nhận diện nếu đang ở cuối bài / `EndOfMedia` thì seek về 0 trước khi `play()`.
+   - Sửa `stop_player`: Dừng player, seek về 0, reset slider và label thời gian về `"00:00"`.
+
+2. **Bổ sung tính năng Nghe Thử Nhanh Mẫu Giọng (`VoicePreviewWorker` & `btn_sample_preview`)**:
+   - Thêm nút `self.btn_sample_preview` (`▶ Nghe thử`) đặt ngay cạnh `combo_voice` trong `voice_row` (giữa ComboBox và nút `🔍 Tra cứu…`).
+   - Xây dựng luồng nền `VoicePreviewWorker(QThread)`:
+     * Hỗ trợ cache offline thông minh tại `downloads/voice_previews/{provider}_{voice_id}.mp3/wav`. File mẫu chỉ tải/tạo 1 lần duy nhất, các lần bấm sau phát tức thì!
+     * **Kokoro Local**: Tự động sinh câu thoại ngắn 1 câu đa ngôn ngữ tương ứng (`vi`, `en`, `zh`, `ja`) hoàn toàn offline.
+     * **ElevenLabs / MiniMax / CapCut**: Lấy URL audio mẫu từ thư viện online, tự động tải về lưu cache local và phát mượt mà qua `sample_player`.
+   - Tương tác giao diện thông minh:
+     * Khi bấm nghe thử: Đổi trạng thái thành `"⏳ Đang tải..."` -> khi phát đổi thành `"⏹ Dừng"`.
+     * Khi phát hết hoặc người dùng bấm dừng: Tự động trả về `"▶ Nghe thử"`.
+     * Tự động dừng phát mẫu khi người dùng đổi giọng đọc, đổi nền tảng (provider) hoặc bấm Tạo Voice / Nghe Thử script.
+
+3. **Bảo toàn Test Suite Mock (`tests/test_preset_voices_ui.py` & `tests/test_standalone_tools_ui.py`)**:
+   - Cung cấp đầy đủ thuộc tính lớp `PlaybackState` và `MediaStatus` cho mock `_SilentMediaPlayer`.
+
+### 3. Kết quả kiểm thử tự động (Unit Test & UI Automation):
+- **Unit & UI Test (`tests/test_preset_voices_ui.py`)**: **16/16 tests PASS 100%** (bổ sung 3 test case kiểm tra state transitions của player và nút quick preview).
+- **Unit & UI Test (`tests/test_standalone_tools_ui.py`)**: **17/17 tests PASS 100%**.
+- **Toàn bộ Test Suite hệ thống (`python run_all_tests.py`)**: **134/134 tests PASS 100% (0 errors, 0 failures, 19 suites trong 45.03s)!**
+

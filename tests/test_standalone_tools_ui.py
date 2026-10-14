@@ -28,10 +28,17 @@ from app.ui.voice_lookup_tab import VoiceLookupTab
 from app.ui.watermark_tab import WatermarkTab
 
 
+from PyQt6.QtMultimedia import QMediaPlayer as _RealQMediaPlayer
+
+
 class _SilentMediaPlayer(QObject):
+    PlaybackState = _RealQMediaPlayer.PlaybackState
+    MediaStatus = _RealQMediaPlayer.MediaStatus
+
     positionChanged = pyqtSignal(int)
     durationChanged = pyqtSignal(int)
     playbackStateChanged = pyqtSignal(object)
+    mediaStatusChanged = pyqtSignal(object)
 
     def setAudioOutput(self, _output):
         pass
@@ -41,6 +48,29 @@ class _SilentMediaPlayer(QObject):
 
     def stop(self):
         pass
+
+    def play(self):
+        pass
+
+    def pause(self):
+        pass
+
+    def setPosition(self, _pos):
+        pass
+
+    def position(self):
+        return 0
+
+    def duration(self):
+        return 0
+
+    def playbackState(self):
+        from PyQt6.QtMultimedia import QMediaPlayer
+        return QMediaPlayer.PlaybackState.StoppedState
+
+    def mediaStatus(self):
+        from PyQt6.QtMultimedia import QMediaPlayer
+        return QMediaPlayer.MediaStatus.NoMedia
 
 
 class _SilentAudioOutput:

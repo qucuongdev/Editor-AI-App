@@ -11,6 +11,8 @@ from PyQt6.QtWidgets import (
     QSizePolicy, QLayout
 )
 
+import requests
+
 from app import config
 from app.core.vibi_client import VibiClient, VibiAPIError
 from app.core.platform_utils import open_path
@@ -33,6 +35,94 @@ from app.core.preset_voices import (
     find_voice_name,
 )
 
+
+
+class VoicePreviewWorker(QThread):
+    """Worker tải hoặc tạo audio mẫu nghe thử ngắn (2-3s) cho giọng đọc."""
+    finished = pyqtSignal(bool, str, str)  # success, path_or_url, error_msg
+
+    def __init__(self, provider: str, voice_id: str):
+        super().__init__()
+        self.provider = provider
+        self.voice_id = voice_id
+
+    def run(self):
+        try:
+            cache_dir = Path(config.APP_DIR) / "downloads" / "voice_previews"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_mp3 = cache_dir / f"{self.provider}_{self.voice_id}.mp3"
+            cache_wav = cache_dir / f"{self.provider}_{self.voice_id}.wav"
+
+            if cache_mp3.exists() and cache_mp3.stat().st_size > 0:
+                self.finished.emit(True, str(cache_mp3), "")
+                return
+            if cache_wav.exists() and cache_wav.stat().st_size > 0:
+                self.finished.emit(True, str(cache_wav), "")
+                return
+
+            if self.provider == "kokoro":
+                from app.core.kokoro_engine import generate_kokoro_tts
+                text = "Xin chào, đây là câu đọc thử nghiệm trên hệ thống Kokoro."
+                if self.voice_id.startswith(("af_", "am_", "bf_", "bm_")):
+                    text = "Hello, this is a sample preview of this voice."
+                elif self.voice_id.startswith("zf_"):
+                    text = "你好，这是试听语音。"
+                elif self.voice_id.startswith("jf_"):
+                    text = "こんにちは、音声サンプルです。"
+
+                out_p, _ = generate_kokoro_tts(text, self.voice_id, speed=1.0, output_path=cache_mp3)
+                self.finished.emit(True, str(out_p), "")
+                return
+
+            client = VibiClient()
+            if not client.is_configured():
+                self.finished.emit(False, "", "Chưa có Voice API Key để nghe thử online. Vào Cài đặt để nhập Key.")
+                return
+
+            preview_url = ""
+            if self.provider == "elevenlabs":
+                voices = client.list_default_voices()
+                for v in voices:
+                    if v.get("voice_id") == self.voice_id and v.get("preview_url"):
+                        preview_url = v["preview_url"]
+                        break
+                if not preview_url:
+                    res = client.list_shared_voices(search=self.voice_id, page_size=5)
+                    for v in res.get("voices", []):
+                        if v.get("voice_id") == self.voice_id and v.get("preview_url"):
+                            preview_url = v["preview_url"]
+                            break
+
+            elif self.provider == "minimax":
+                res = client.list_minimax_system_voices(page=1, page_size=50)
+                for v in res.get("voice_list", []):
+                    vid = str(v.get("voice_id") or v.get("uniq_id") or "")
+                    if vid == self.voice_id and (v.get("sample_audio") or v.get("preview_url")):
+                        preview_url = v.get("sample_audio") or v.get("preview_url")
+                        break
+
+            elif self.provider == "capcut":
+                res = client.list_capcut_system_voices()
+                for v in res.get("voice_list", []):
+                    vid = str(v.get("voice_id") or v.get("id") or "")
+                    if vid == self.voice_id and (v.get("preview_url") or v.get("sample_audio")):
+                        preview_url = v.get("preview_url") or v.get("sample_audio")
+                        break
+
+            if preview_url:
+                try:
+                    r = requests.get(preview_url, timeout=10)
+                    if r.status_code == 200 and len(r.content) > 0:
+                        cache_mp3.write_bytes(r.content)
+                        self.finished.emit(True, str(cache_mp3), "")
+                        return
+                except Exception:
+                    self.finished.emit(True, preview_url, "")
+                    return
+
+            self.finished.emit(False, "", f"Không tìm thấy mẫu nghe thử cho giọng '{self.voice_id}'.")
+        except Exception as e:
+            self.finished.emit(False, "", str(e))
 
 
 class TTSTab(QWidget):
@@ -70,7 +160,7 @@ class TTSTab(QWidget):
         self._restoring_standalone = False
         self._standalone_save_timer: Optional[QTimer] = None
 
-        # Trình phát audio
+        # Trình phát audio chính
         self.player = QMediaPlayer()
         self.audio_output = QAudioOutput()
         self.player.setAudioOutput(self.audio_output)
@@ -78,6 +168,21 @@ class TTSTab(QWidget):
 
         self.player.positionChanged.connect(self.on_player_position_changed)
         self.player.durationChanged.connect(self.on_player_duration_changed)
+        if hasattr(self.player, "playbackStateChanged"):
+            self.player.playbackStateChanged.connect(self.on_player_playback_state_changed)
+        if hasattr(self.player, "mediaStatusChanged"):
+            self.player.mediaStatusChanged.connect(self.on_player_media_status_changed)
+
+        # Trình phát audio nghe thử giọng mẫu
+        self.sample_player = QMediaPlayer()
+        self.sample_audio_output = QAudioOutput()
+        self.sample_player.setAudioOutput(self.sample_audio_output)
+        self.sample_audio_output.setVolume(0.9)
+        if hasattr(self.sample_player, "playbackStateChanged"):
+            self.sample_player.playbackStateChanged.connect(self._on_sample_playback_state_changed)
+        if hasattr(self.sample_player, "mediaStatusChanged"):
+            self.sample_player.mediaStatusChanged.connect(self._on_sample_media_status_changed)
+        self._sample_worker: Optional[VoicePreviewWorker] = None
 
         self.init_ui()
 
@@ -434,6 +539,11 @@ class TTSTab(QWidget):
         self.combo_voice.currentIndexChanged.connect(self._on_voice_combo_changed)
         self._display_selected_voice()
 
+        self.btn_sample_preview = QPushButton("▶ Nghe thử")
+        self.btn_sample_preview.setObjectName("btn_secondary")
+        self.btn_sample_preview.setToolTip("Nghe thử câu thoại mẫu ngắn của giọng đang chọn")
+        self.btn_sample_preview.clicked.connect(self.toggle_sample_preview)
+
         self.btn_lookup_voice = QPushButton("🔍 Tra cứu…")
         self.btn_lookup_voice.setObjectName("btn_subtle")
         self.btn_lookup_voice.setToolTip("Mở thư viện tra cứu giọng để nghe thử và tìm kiếm thêm nhiều giọng khác")
@@ -441,6 +551,7 @@ class TTSTab(QWidget):
 
         voice_row.addWidget(lbl_vid)
         voice_row.addWidget(self.combo_voice)
+        voice_row.addWidget(self.btn_sample_preview)
         voice_row.addWidget(self.btn_lookup_voice)
         voice_row.addStretch()
         cp_layout.addLayout(voice_row)
@@ -756,6 +867,12 @@ class TTSTab(QWidget):
         self.combo_voice.blockSignals(False)
 
     def _on_voice_combo_changed(self, index: int):
+        if hasattr(self, "sample_player") and hasattr(self.sample_player, "playbackState"):
+            if self.sample_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self.sample_player.stop()
+        if hasattr(self, "btn_sample_preview"):
+            self.btn_sample_preview.setText("▶ Nghe thử")
+
         if index < 0:
             return
         data = self.combo_voice.itemData(index)
@@ -817,6 +934,12 @@ class TTSTab(QWidget):
         self._display_selected_voice()
 
     def on_provider_changed(self):
+        if hasattr(self, "sample_player") and hasattr(self.sample_player, "playbackState"):
+            if self.sample_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self.sample_player.stop()
+        if hasattr(self, "btn_sample_preview"):
+            self.btn_sample_preview.setText("▶ Nghe thử")
+
         provider = self.combo_provider.currentData() or "elevenlabs"
         self._active_voice_provider = provider
         self.combo_model.blockSignals(True)
@@ -922,6 +1045,12 @@ class TTSTab(QWidget):
         self.lbl_status.setText(f"✓ Đã chọn giọng: {disp_name}")
 
     def start_tts(self):
+        if hasattr(self, "sample_player") and hasattr(self.sample_player, "playbackState"):
+            if self.sample_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self.sample_player.stop()
+        if hasattr(self, "btn_sample_preview"):
+            self.btn_sample_preview.setText("▶ Nghe thử")
+
         text = self.txt_input.toPlainText().strip()
         if not text:
             QMessageBox.warning(self, "Chưa nhập văn bản", "Vui lòng nhập văn bản cần chuyển thành giọng nói!")
@@ -1090,16 +1219,105 @@ class TTSTab(QWidget):
                 QMessageBox.critical(self, "Lỗi tạo giọng", msg)
 
     def toggle_play_pause(self):
-        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+        # Dừng sample player nếu đang phát
+        if hasattr(self, "sample_player") and hasattr(self.sample_player, "playbackState"):
+            if self.sample_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self.sample_player.stop()
+                if hasattr(self, "btn_sample_preview"):
+                    self.btn_sample_preview.setText("▶ Nghe thử")
+
+        state = self.player.playbackState() if hasattr(self.player, "playbackState") else None
+        if state == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
             self.btn_play_pause.setText("Tiếp tục")
         else:
+            # Nếu đã hết bài (EndOfMedia) hoặc position >= duration > 0, seek về 0 trước khi phát lại
+            if hasattr(self.player, "mediaStatus") and self.player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia:
+                self.player.setPosition(0)
+            elif hasattr(self.player, "duration") and hasattr(self.player, "position"):
+                if self.player.duration() > 0 and self.player.position() >= self.player.duration():
+                    self.player.setPosition(0)
             self.player.play()
             self.btn_play_pause.setText("Tạm dừng")
 
     def stop_player(self):
         self.player.stop()
+        if hasattr(self.player, "setPosition"):
+            self.player.setPosition(0)
+        self.slider_player.setValue(0)
+        self.lbl_time_cur.setText("00:00")
         self.btn_play_pause.setText("Phát")
+
+    def on_player_playback_state_changed(self, state):
+        if state == QMediaPlayer.PlaybackState.PlayingState:
+            self.btn_play_pause.setText("Tạm dừng")
+        elif state == QMediaPlayer.PlaybackState.PausedState:
+            self.btn_play_pause.setText("Tiếp tục")
+        else:  # StoppedState
+            self.btn_play_pause.setText("Phát")
+
+    def on_player_media_status_changed(self, status):
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            self.btn_play_pause.setText("Phát")
+            self.slider_player.setValue(0)
+            self.lbl_time_cur.setText("00:00")
+            if hasattr(self.player, "setPosition"):
+                self.player.setPosition(0)
+
+    def toggle_sample_preview(self):
+        if hasattr(self, "sample_player") and hasattr(self.sample_player, "playbackState"):
+            if self.sample_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self.sample_player.stop()
+                self.btn_sample_preview.setText("▶ Nghe thử")
+                return
+
+        # Dừng player chính nếu đang phát
+        if hasattr(self.player, "playbackState") and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.player.pause()
+            self.btn_play_pause.setText("Tiếp tục")
+
+        voice_id = self.current_voice_id()
+        if not voice_id:
+            self.lbl_status.setText("Vui lòng chọn giọng đọc để nghe thử.")
+            return
+
+        provider = self.combo_provider.currentData() or "elevenlabs"
+
+        # Nếu worker trước đó đang chạy
+        if self._sample_worker and self._sample_worker.isRunning():
+            self._sample_worker.wait(100)
+
+        self.btn_sample_preview.setText("⏳ Đang tải...")
+        self.btn_sample_preview.setEnabled(False)
+        self.lbl_status.setText(f"Đang chuẩn bị mẫu nghe thử giọng '{voice_id}'...")
+
+        self._sample_worker = VoicePreviewWorker(provider, voice_id)
+        self._sample_worker.finished.connect(self._on_sample_preview_ready)
+        self._sample_worker.start()
+
+    def _on_sample_preview_ready(self, success: bool, path_or_url: str, err_msg: str):
+        self.btn_sample_preview.setEnabled(True)
+        if success and path_or_url:
+            self.btn_sample_preview.setText("⏹ Dừng")
+            self.lbl_status.setText("Đang phát mẫu giọng đọc...")
+            if path_or_url.startswith(("http://", "https://")):
+                self.sample_player.setSource(QUrl(path_or_url))
+            else:
+                self.sample_player.setSource(QUrl.fromLocalFile(path_or_url))
+            self.sample_player.play()
+        else:
+            self.btn_sample_preview.setText("▶ Nghe thử")
+            self.lbl_status.setText(f"Không thể nghe thử: {err_msg}")
+            QMessageBox.information(self, "Nghe thử giọng", err_msg)
+
+    def _on_sample_playback_state_changed(self, state):
+        if state != QMediaPlayer.PlaybackState.PlayingState:
+            self.btn_sample_preview.setText("▶ Nghe thử")
+
+    def _on_sample_media_status_changed(self, status):
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            self.sample_player.stop()
+            self.btn_sample_preview.setText("▶ Nghe thử")
 
     def set_player_pos(self, pos: int):
         self.player.setPosition(pos)
@@ -1168,6 +1386,12 @@ class TTSTab(QWidget):
             )
 
     def preview_tts(self):
+        if hasattr(self, "sample_player") and hasattr(self.sample_player, "playbackState"):
+            if self.sample_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self.sample_player.stop()
+        if hasattr(self, "btn_sample_preview"):
+            self.btn_sample_preview.setText("▶ Nghe thử")
+
         text = self.txt_input.toPlainText().strip()
         if not text:
             QMessageBox.warning(self, "Chưa nhập văn bản", "Vui lòng nhập văn bản cần nghe thử!")
