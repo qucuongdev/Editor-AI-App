@@ -339,3 +339,28 @@
 - **Unit & UI Test (`tests/test_standalone_tools_ui.py`)**: **17/17 tests PASS 100%**.
 - **Toàn bộ Test Suite hệ thống (`python run_all_tests.py`)**: **134/134 tests PASS 100% (0 errors, 0 failures, 19 suites trong 45.03s)!**
 
+---
+
+## [2026-10-14 18:10] - Sửa Triệt Để Lỗi Phân Biệt 'AI' (Trí tuệ nhân tạo) và 'ai' (Đại từ tiếng Việt)
+
+### 1. Bối cảnh & Phản hồi Người Dùng:
+- Người dùng phản ánh: *"Từ từ chưa cần, giờ nó đọc ai là ây ai luôn, tôi nghĩ phải viết hoa là AI thì mới đọc là ây ai chứ?"*
+- **Nguyên nhân kỹ thuật cốt lõi phát hiện**:
+  - Trong `kokoro_tts_local/models.py`, từ điển `tech_map` chứa cả `r'\bAI\b': 'ây ai'` lẫn `r'\bai\b': 'ây ai'`, đồng thời vòng lặp thay thế sử dụng `flags=re.IGNORECASE`.
+  - Hậu quả: Mọi từ `ai` tiếng Việt thông thường (như *"ai đó"*, *"có ai không"*, *"ai cũng biết"*, *"không ai làm gì"*, *"Ai đó đang gọi"*) đều bị biến đổi thành *"ây ai"*!
+
+### 2. Các giải pháp kỹ thuật đã triển khai:
+1. **Sửa chuẩn hóa nội bộ Kokoro (`kokoro_tts_local/models.py`)**:
+   - Tách riêng `r'\bAI\b': 'ây ai'` thành xử lý **Case-Sensitive** nghiêm ngặt (chỉ thay thế khi viết hoa cả hai chữ cái `AI`).
+   - Loại bỏ hoàn toàn `r'\bai\b'` khỏi `tech_map`.
+   - Bảo toàn 100% từ `ai` thường và `Ai` đầu câu trong tiếng Việt.
+2. **Kiểm tra phát âm G2P thực tế**:
+   - `ai đó` -> phát âm chuẩn tiếng Việt `ˈaːj dˈɔ↗` ("ai đó"), không có âm "ây".
+   - `Ai đó đang gọi bạn` -> phát âm chuẩn tiếng Việt `ˈaːj dˈɔ↗...`.
+   - `công nghệ AI` -> phát âm chuẩn `ˈəɪ ˈaːj` ("công nghệ ây ai").
+
+### 3. Kết quả kiểm thử tự động:
+- **Unit Test (`tests/test_text_normalizer.py`)**: **17/17 tests PASS 100%** (bổ sung test case `test_ai_distinction_between_vietnamese_pronoun_and_tech_ai`).
+- **Toàn bộ Test Suite hệ thống (`python run_all_tests.py`)**: **135/135 tests PASS 100% (0 errors, 0 failures, 19 suites trong 49.08s)!**
+
+

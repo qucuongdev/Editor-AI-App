@@ -168,6 +168,25 @@ class TestTextNormalizer(unittest.TestCase):
         self.assertNotIn("ˈiː", p_engai, "Từ 'e' trong 'e ngại' không được đọc là /iː/")
         self.assertIn("ˈɛ", p_engai, "Từ 'e' trong 'e ngại' phải được phát âm là /ɛ/")
 
+    def test_ai_distinction_between_vietnamese_pronoun_and_tech_ai(self):
+        """Phân biệt rõ ràng từ 'ai' tiếng Việt (ai đó, ai cũng) và 'AI' viết hoa (Trí tuệ nhân tạo)."""
+        # 1. Normalizer phải bảo toàn 'ai' thường và 'Ai' đầu câu, chỉ chuyển 'AI' hoa
+        self.assertEqual(normalize_vietnamese_text("ai đó đang làm gì"), "ai đó đang làm gì")
+        self.assertEqual(normalize_vietnamese_text("có ai ở đây không"), "có ai ở đây không")
+        self.assertEqual(normalize_vietnamese_text("Ai cũng biết"), "Ai cũng biết")
+        self.assertEqual(normalize_vietnamese_text("công nghệ AI"), "công nghệ A.I")
+
+        # 2. Kokoro Vietnamese Normalization & Phonemization
+        try:
+            from kokoro_tts_local.models import _normalize_vietnamese_text
+            # 'ai' thường phải giữ nguyên 'ai' tiếng Việt
+            self.assertEqual(_normalize_vietnamese_text("ai đó"), "ai đó")
+            self.assertEqual(_normalize_vietnamese_text("Ai làm"), "Ai làm")
+            # 'AI' viết hoa chuyển thành 'ây ai'
+            self.assertEqual(_normalize_vietnamese_text("công nghệ AI"), "công nghệ ây ai")
+        except ImportError:
+            pass
+
 
 if __name__ == "__main__":
     unittest.main()
