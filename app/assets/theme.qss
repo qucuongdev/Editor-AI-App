@@ -28,13 +28,34 @@ QWidget#central_widget, QWidget#content_container {
     background-color: #121316;
 }
 
-#watermark_tab, #tts_tab, #voice_lookup_tab, #scene_tab, #video_tab, #project_tab, #settings_tab, #pricing_tab {
+#watermark_tab, #tts_tab, #voice_lookup_tab, #scene_tab, #video_tab, #project_tab, #settings_tab, #pricing_tab, #trending_tab {
     background-color: #121316;
 }
 
 QFrame#update_bar {
     background-color: #16171d;
     border-bottom: 1px solid #23252c;
+}
+
+QPushButton#btn_toggle_sidebar {
+    background-color: #1a1b23;
+    border: 1px solid #2d303e;
+    border-radius: 6px;
+    color: #cbd5e1;
+    font-size: 15px;
+    font-weight: bold;
+    padding: 0px;
+}
+
+QPushButton#btn_toggle_sidebar:hover {
+    background-color: #232634;
+    border-color: #3b82f6;
+    color: #38bdf8;
+}
+
+QPushButton#btn_toggle_sidebar:pressed {
+    background-color: #2563eb;
+    color: #ffffff;
 }
 
 QScrollArea, QScrollArea > QWidget, QScrollArea > QWidget > QWidget {
@@ -91,6 +112,11 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     max-width: 260px;
 }
 
+#sidebar[mini="true"] {
+    min-width: 64px;
+    max-width: 64px;
+}
+
 #sidebar_brand {
     padding: 16px 14px 12px 14px;
 }
@@ -120,6 +146,13 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     margin: 2px 8px;
 }
 
+#sidebar[mini="true"] #nav_btn {
+    text-align: center;
+    padding: 10px 0px;
+    font-size: 18px;
+    margin: 3px 6px;
+}
+
 #nav_btn:hover {
     background-color: #1f2028;
     color: #f3f4f6;
@@ -134,6 +167,10 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
 #sidebar_footer {
     padding: 12px 14px;
     border-top: 1px solid #23252c;
+}
+
+#sidebar[mini="true"] #sidebar_footer {
+    padding: 8px 4px;
 }
 
 #sidebar_version {

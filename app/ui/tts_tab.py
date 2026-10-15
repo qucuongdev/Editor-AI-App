@@ -350,6 +350,15 @@ class TTSTab(QWidget):
         if project:
             self._hydrate_project_tts(project)
 
+    def set_script_text(self, text: str) -> None:
+        """Đặt văn bản kịch bản vào ô nhập liệu TTS và cập nhật bộ đếm."""
+        if hasattr(self, "txt_input"):
+            self.txt_input.blockSignals(True)
+            self.txt_input.setPlainText(text or "")
+            self.txt_input.blockSignals(False)
+            if hasattr(self, "on_text_changed"):
+                self.on_text_changed()
+
     def _hydrate_project_tts(self, project):
         """Khôi phục kịch bản, cấu hình giọng và file âm thanh đã tạo trước đó."""
         # 1. Khôi phục nội dung văn bản kịch bản

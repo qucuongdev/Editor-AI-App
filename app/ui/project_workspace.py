@@ -134,8 +134,14 @@ class ProjectWorkspace(QWidget):
         self.tts_tab.voice_generated.connect(self._on_voice_generated)
         self.scene_tab.scene_path_changed.connect(self.video_tab.set_json_file)
         self.scene_tab.scenes_updated.connect(self.refresh_pipeline_badges)
+        self.scene_tab.request_open_tts.connect(self._on_scene_request_open_tts)
         self.video_tab.video_rendered.connect(self._on_video_rendered)
         self.inner_tabs.currentChanged.connect(self._on_inner_tab_changed)
+
+    def _on_scene_request_open_tts(self, script: str):
+        if hasattr(self, "tts_tab"):
+            self.tts_tab.set_script_text(script)
+        self.inner_tabs.setCurrentIndex(1)
 
     def show_project_list(self, checked=False, force=False):
         """Quay về danh sách; không cho đổi ngữ cảnh khi worker còn chạy."""

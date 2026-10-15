@@ -26,6 +26,7 @@ class SceneTab(QWidget):
 
     scene_path_changed = pyqtSignal(object)
     scenes_updated = pyqtSignal()
+    request_open_tts = pyqtSignal(str)
 
     TEXT_MODE = "text"
     FILE_MODE = "file"
@@ -71,11 +72,25 @@ class SceneTab(QWidget):
         mode_label.setProperty("class", "section_label")
         panel_layout.addWidget(mode_label)
 
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(10)
+
         self.combo_mode = QComboBox()
         self.combo_mode.addItem("Nhập nội dung JSON", self.TEXT_MODE)
         self.combo_mode.addItem("Chọn file JSON", self.FILE_MODE)
         self.combo_mode.currentIndexChanged.connect(self._on_mode_changed)
-        panel_layout.addWidget(self.combo_mode)
+        mode_row.addWidget(self.combo_mode, stretch=1)
+
+        self.btn_ai_storyboard = QPushButton("✨ AI Sinh Phân Cảnh Tự Động")
+        self.btn_ai_storyboard.setObjectName("btn_ai_storyboard")
+        self.btn_ai_storyboard.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_ai_storyboard.setStyleSheet(
+            "background-color: #7c3aed; color: #ffffff; font-weight: 700; border-radius: 6px; padding: 6px 14px;"
+        )
+        self.btn_ai_storyboard.clicked.connect(self._on_ai_storyboard_clicked)
+        mode_row.addWidget(self.btn_ai_storyboard)
+
+        panel_layout.addLayout(mode_row)
 
         self.input_stack = QStackedWidget()
 
@@ -273,3 +288,30 @@ class SceneTab(QWidget):
                 self.project.save_scenes_json(content)
             except Exception:
                 pass
+
+    def _on_ai_storyboard_clicked(self):
+        from app.ui.storyboard_dialog import StoryboardDialog
+
+        default_topic = ""
+        if self.project:
+            default_topic = getattr(self.project, "name", "")
+
+        dlg = StoryboardDialog(topic=default_topic, parent=self)
+        dlg.apply_to_project_requested.connect(self._on_storyboard_applied)
+        dlg.send_to_tts_requested.connect(self._on_storyboard_send_to_tts)
+        dlg.exec()
+
+    def _on_storyboard_send_to_tts(self, script: str):
+        if self.project and script:
+            self.project.save_tts_data(script)
+        self.request_open_tts.emit(script)
+
+    def _on_storyboard_applied(self, scenes_json: str, full_script: str):
+        self.combo_mode.setCurrentIndex(self.combo_mode.findData(self.TEXT_MODE))
+        self.txt_scene_content.setPlainText(scenes_json)
+        self._validate_text()
+        if self.project:
+            self.project.save_scenes_json(scenes_json)
+            if full_script and not self.project.tts_script:
+                self.project.save_tts_data(full_script)
+            self.scenes_updated.emit()

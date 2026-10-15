@@ -2,7 +2,7 @@ from pathlib import Path
 import sys
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QKeySequence, QPixmap, QShortcut
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -24,6 +24,7 @@ from app.update_install import launch_update_helper, select_download_url
 from app.ui.project_workspace import ProjectWorkspace
 from app.ui.settings_tab import SettingsTab
 from app.ui.tts_tab import TTSTab
+from app.ui.trending_tab import TrendingTab
 from app.ui.update_dialog import UpdateDialog
 from app.ui.watermark_tab import WatermarkTab
 from app.ui.video_watermark_tab import VideoWatermarkTab
@@ -31,6 +32,14 @@ from app.version import APP_VERSION
 
 
 ICONS_DIR = Path(__file__).resolve().parent.parent / "assets" / "icons"
+
+
+def split_icon_and_title(text: str) -> tuple[str, str]:
+    """Tách biểu tượng icon và tiêu đề chữ từ nhãn nút navigation."""
+    parts = text.strip().split(maxsplit=1)
+    if len(parts) == 2 and len(parts[0]) <= 3:
+        return parts[0], parts[1].strip()
+    return "", text.strip()
 
 
 class MainWindow(QMainWindow):
@@ -43,6 +52,8 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(900, 640)
 
         self.nav_buttons: list[QPushButton] = []
+        self.is_sidebar_collapsed: bool = False
+        self._full_api_text: str = ""
         self._staged_update: Path | None = None
         self._download_thread: UpdateDownloadThread | None = None
         self._update_dialog: UpdateDialog | None = None
@@ -71,7 +82,8 @@ class MainWindow(QMainWindow):
         workspace_layout = QHBoxLayout()
         workspace_layout.setContentsMargins(0, 0, 0, 0)
         workspace_layout.setSpacing(0)
-        workspace_layout.addWidget(self._build_sidebar())
+        self.sidebar = self._build_sidebar()
+        workspace_layout.addWidget(self.sidebar)
 
         self.watermark_pages = QTabWidget()
         self.watermark_pages.setObjectName("workspace_pages")
@@ -89,12 +101,15 @@ class MainWindow(QMainWindow):
             self.standalone_state, config.TTS_DOWNLOADS_DIR
         )
         self.settings_tab = SettingsTab()
+        self.trending_tab = TrendingTab()
+        self.trending_tab.request_open_tts.connect(self.open_tts_with_script)
 
         self.stack = QStackedWidget()
         self.stack.setObjectName("content_container")
         self.stack.addWidget(self.project_workspace)
         self.stack.addWidget(self.watermark_pages)
         self.stack.addWidget(self.tts_tab)
+        self.stack.addWidget(self.trending_tab)
         self.stack.addWidget(self.settings_tab)
 
         self.settings_tab.api_key_saved.connect(self.update_api_status_badge)
@@ -104,6 +119,15 @@ class MainWindow(QMainWindow):
         workspace_layout.addWidget(self.stack, stretch=1)
         root_layout.addLayout(workspace_layout, stretch=1)
         root_layout.addWidget(self._build_footer())
+
+        # Shortcut phím tắt Ctrl+B để ẩn/hiện hoặc thu gọn/mở rộng sidebar
+        self.shortcut_toggle_sidebar = QShortcut(QKeySequence("Ctrl+B"), self)
+        self.shortcut_toggle_sidebar.activated.connect(self.toggle_sidebar)
+
+        # Khôi phục trạng thái thu gọn sidebar
+        is_collapsed = self.standalone_state.load_sidebar_collapsed()
+        self.set_sidebar_collapsed(is_collapsed)
+
         last_page = self.standalone_state.load_last_page()
         self.switch_page(last_page if last_page < self.stack.count() else 0)
 
@@ -111,25 +135,38 @@ class MainWindow(QMainWindow):
         if self.watermark_pages.widget(index) is self.video_watermark_tab:
             self.video_watermark_tab.on_tab_activated()
 
+    def _refresh_api_chip_display(self) -> None:
+        if not hasattr(self, "api_chip"):
+            return
+        if self.is_sidebar_collapsed:
+            has_key = bool(config.settings.VIBI_API_KEY.strip())
+            self.api_chip.setText("🔑" if has_key else "⚠️")
+            self.api_chip.setToolTip(self._full_api_text or ("Voice API: Đã cấu hình" if has_key else "Voice API: Chưa cấu hình"))
+        else:
+            self.api_chip.setText(self._full_api_text)
+            self.api_chip.setToolTip("")
+
     def on_account_updated(self, info: dict) -> None:
         credits = info.get("credit_balance", info.get("credits", 0))
         self.tts_tab.set_credit_balance(credits)
         self.project_workspace.tts_tab.set_credit_balance(credits)
         self.settings_tab.update_account_info(info)
-        self.api_chip.setText(f"● Voice API: {credits:,} credits")
+        self._full_api_text = f"● Voice API: {credits:,} credits"
         self.api_chip.setStyleSheet(
             "background-color: #064e3b; border: 1px solid #065f46; "
             "border-radius: 6px; padding: 4px 10px; color: #34d399; "
             "font-size: 11px; font-weight: 600;"
             if credits > 0 else ""
         )
+        self._refresh_api_chip_display()
 
     def update_api_status_badge(self, *_args) -> None:
         self.api_chip.setStyleSheet("")
-        self.api_chip.setText(
+        self._full_api_text = (
             "Voice API\nĐã cấu hình" if config.settings.VIBI_API_KEY.strip()
             else "Voice API\nChưa cấu hình"
         )
+        self._refresh_api_chip_display()
 
     def _build_sidebar(self) -> QFrame:
         sidebar = QFrame()
@@ -142,7 +179,8 @@ class MainWindow(QMainWindow):
         self.btn_nav_project = self.create_nav_btn("📁  Dự án", 0)
         self.btn_nav_watermark = self.create_nav_btn("🍌  Gỡ watermark", 1)
         self.btn_nav_tts = self.create_nav_btn("🎙  Tạo Voice TTS", 2)
-        self.btn_nav_settings = self.create_nav_btn("⚙  Cài đặt", 3)
+        self.btn_nav_trending = self.create_nav_btn("🔥  Xu hướng & Ý tưởng", 3)
+        self.btn_nav_settings = self.create_nav_btn("⚙  Cài đặt", 4)
         for button in self.nav_buttons:
             layout.addWidget(button)
         layout.addStretch()
@@ -158,10 +196,24 @@ class MainWindow(QMainWindow):
         layout.addWidget(sidebar_footer)
         return sidebar
 
-    def create_nav_btn(self, title: str, index: int) -> QPushButton:
-        button = QPushButton(title)
+    def create_nav_btn(self, title: str, index: int, icon: str = "") -> QPushButton:
+        if not icon:
+            parsed_icon, clean_title = split_icon_and_title(title)
+            icon = parsed_icon or "📌"
+            full_label = title
+            display_title = clean_title or title
+        else:
+            full_label = f"{icon}  {title}"
+            display_title = title
+
+        button = QPushButton(full_label)
         button.setObjectName("nav_btn")
         button.setCheckable(True)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setProperty("icon_text", icon)
+        button.setProperty("full_title", full_label)
+        button.setProperty("title_text", display_title)
+        button.setToolTip(full_label)
         button.clicked.connect(lambda _, page=index: self.switch_page(page))
         self.nav_buttons.append(button)
         return button
@@ -176,6 +228,12 @@ class MainWindow(QMainWindow):
         self.standalone_state.save_last_page(index)
         if index == 0 and (previous_index == 0 or not self.project_workspace.current_project):
             self.project_workspace.show_project_list()
+
+    def open_tts_with_script(self, script: str = "") -> None:
+        """Chuyển sang trang Tạo Voice TTS và nạp kịch bản vào ô nhập liệu."""
+        if script and hasattr(self, "tts_tab"):
+            self.tts_tab.set_script_text(script)
+        self.switch_page(2)
 
     def closeEvent(self, event) -> None:
         if self._download_thread and self._download_thread.isRunning():
@@ -193,6 +251,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_update_checker") and self._update_checker and self._update_checker.isRunning():
             self._update_checker.quit()
             self._update_checker.wait(500)
+        if hasattr(self, "trending_tab") and hasattr(self.trending_tab, "_trends_worker") and self.trending_tab._trends_worker and self.trending_tab._trends_worker.isRunning():
+            self.trending_tab._trends_worker.terminate()
+            self.trending_tab._trends_worker.wait(500)
         self.tts_tab.flush_standalone_state()
         super().closeEvent(event)
 
@@ -201,8 +262,17 @@ class MainWindow(QMainWindow):
         update_bar.setObjectName("update_bar")
         update_bar.setMinimumHeight(52)
         layout = QHBoxLayout(update_bar)
-        layout.setContentsMargins(24, 10, 24, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(14, 10, 24, 10)
+        layout.setSpacing(12)
+
+        # Nút ẩn / hiện sidebar
+        self.btn_toggle_sidebar = QPushButton("☰")
+        self.btn_toggle_sidebar.setObjectName("btn_toggle_sidebar")
+        self.btn_toggle_sidebar.setToolTip("Ẩn/Hiện thanh điều hướng bên trái (Ctrl+B)")
+        self.btn_toggle_sidebar.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_toggle_sidebar.setFixedSize(34, 32)
+        self.btn_toggle_sidebar.clicked.connect(self.toggle_sidebar)
+        layout.addWidget(self.btn_toggle_sidebar)
 
         title = QLabel("Editor Video AI")
         title.setProperty("class", "app_title_text")
@@ -217,6 +287,46 @@ class MainWindow(QMainWindow):
         self.update_button.clicked.connect(self._check_update_manually)
         layout.addWidget(self.update_button)
         return update_bar
+
+    def set_sidebar_collapsed(self, collapsed: bool) -> None:
+        """Thu gọn sidebar về dạng icon-only (Mini) hoặc mở rộng đầy đủ (Expanded)."""
+        self.is_sidebar_collapsed = collapsed
+        self.sidebar.setVisible(True)
+        self.sidebar.setProperty("mini", "true" if collapsed else "false")
+        self.sidebar.setFixedWidth(64 if collapsed else 260)
+
+        for btn in self.nav_buttons:
+            if collapsed:
+                btn.setText(btn.property("icon_text") or "📌")
+                btn.setToolTip(btn.property("full_title") or "")
+            else:
+                btn.setText(btn.property("full_title") or "")
+                btn.setToolTip("")
+
+        if collapsed:
+            self.btn_toggle_sidebar.setToolTip("Mở rộng thanh điều hướng bên trái (Ctrl+B)")
+            self.btn_toggle_sidebar.setText("▶")
+        else:
+            self.btn_toggle_sidebar.setToolTip("Thu gọn thanh điều hướng bên trái (Ctrl+B)")
+            self.btn_toggle_sidebar.setText("◀")
+
+        self._refresh_api_chip_display()
+
+        self.sidebar.style().unpolish(self.sidebar)
+        self.sidebar.style().polish(self.sidebar)
+        for btn in self.nav_buttons:
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+
+        self.standalone_state.save_sidebar_collapsed(collapsed)
+
+    def toggle_sidebar(self) -> None:
+        """Bật/tắt chế độ thu gọn thanh điều hướng (Sidebar)."""
+        self.set_sidebar_collapsed(not self.is_sidebar_collapsed)
+
+    def set_sidebar_visible(self, visible: bool) -> None:
+        """Tương thích ngược: visible=True là mở rộng, visible=False là thu gọn mini."""
+        self.set_sidebar_collapsed(not visible)
 
     def _check_update_automatically(self) -> None:
         if getattr(sys, "frozen", False):

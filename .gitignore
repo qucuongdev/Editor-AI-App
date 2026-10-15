@@ -81,5 +81,12 @@ tests/*
 !tests/test_tts_normalization_ui.py
 !tests/test_preset_voices_ui.py
 !tests/test_ui_kokoro_full_flow.py
+!tests/test_sidebar_toggle_ui.py
+!tests/test_trending_and_ideas.py
+!tests/test_trending_ui.py
+!tests/test_storyboard_generator.py
+!tests/test_storyboard_ui.py
 build/
 dist/
+scratch/
+

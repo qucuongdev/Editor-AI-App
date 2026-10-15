@@ -50,10 +50,15 @@ class StandaloneStateStore:
     WATERMARK_KEY = "standalone/watermark"
     TTS_KEY = "standalone/tts"
     LAST_PAGE_KEY = "window/last_sidebar_page"
-    VALID_PAGES = range(5)
+    SIDEBAR_VISIBLE_KEY = "window/sidebar_visible"
+    VALID_PAGES = range(6)
 
     def __init__(self, settings: Optional[QSettings] = None):
-        self.settings = settings or QSettings()
+        self.settings = (
+            settings
+            if settings is not None
+            else QSettings("AI Studio", "AI Media Studio")
+        )
 
     def save_last_page(self, index: int) -> None:
         self.settings.setValue(self.LAST_PAGE_KEY, int(index))
@@ -65,6 +70,28 @@ class StandaloneStateStore:
         except (TypeError, ValueError):
             return 0
         return index if index in self.VALID_PAGES else 0
+
+    def save_sidebar_visible(self, visible: bool) -> None:
+        self.settings.setValue(self.SIDEBAR_VISIBLE_KEY, bool(visible))
+        self.settings.sync()
+
+    def load_sidebar_visible(self) -> bool:
+        val = self.settings.value(self.SIDEBAR_VISIBLE_KEY, None)
+        if val is None:
+            return True
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, str):
+            return val.lower() not in ("false", "0", "no")
+        if isinstance(val, (int, float)):
+            return bool(val)
+        return True
+
+    def save_sidebar_collapsed(self, collapsed: bool) -> None:
+        self.save_sidebar_visible(not collapsed)
+
+    def load_sidebar_collapsed(self) -> bool:
+        return not self.load_sidebar_visible()
 
     def save_watermark(
         self, files: Iterable[Path], output_dir: Optional[Path]

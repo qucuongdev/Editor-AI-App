@@ -102,6 +102,18 @@ class StandaloneStateStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             resolve_new_output_folder(root, "CON")
 
+    def test_sidebar_visible_state_persistence(self):
+        # Default should be True
+        self.assertTrue(self.store.load_sidebar_visible())
+
+        # Save False
+        self.store.save_sidebar_visible(False)
+        self.assertFalse(self.store.load_sidebar_visible())
+
+        # Save True
+        self.store.save_sidebar_visible(True)
+        self.assertTrue(self.store.load_sidebar_visible())
+
 
 if __name__ == "__main__":
     unittest.main()
