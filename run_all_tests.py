@@ -43,7 +43,7 @@ def run_tests():
             if proc.returncode == 0 and "OK" in output:
                 print(f"  [PASS] {tf.name:<38} ({ran:2d} tests in {duration:.2f}s)", flush=True)
             else:
-                print(f"  [FAIL] {tf.name:<38}", flush=True)
+                print(f"  [FAIL] {tf.name:<38} (Exit code: {proc.returncode})", flush=True)
                 print(output, flush=True)
                 failed_files.append(tf.name)
         except subprocess.TimeoutExpired:

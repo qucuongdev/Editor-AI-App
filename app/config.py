@@ -1,7 +1,30 @@
+import json
 from pathlib import Path
 from PyQt6.QtCore import QSettings
 
 APP_DIR = Path(__file__).resolve().parent.parent
+LOCAL_SETTINGS_FILE = APP_DIR / "local_settings.json"
+
+
+def _load_local_json_settings() -> dict:
+    if LOCAL_SETTINGS_FILE.exists():
+        try:
+            with open(LOCAL_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                content = f.read()
+                return json.loads(content) if content.strip() else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_local_json_settings(data: dict) -> None:
+    try:
+        with open(LOCAL_SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+
 DOWNLOADS_DIR = APP_DIR / "downloads"
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 LEGACY_WATERMARK_DOWNLOADS_DIR = DOWNLOADS_DIR / "watermark"
@@ -43,8 +66,20 @@ class AppConfig:
         return projects
 
     def _setting_text(self, key: str, default: str) -> str:
-        value = SETTINGS.value(key, default)
-        return str(value) if value is not None else default
+        value = SETTINGS.value(key, None)
+        local_data = _load_local_json_settings()
+        if value is not None and str(value).strip():
+            str_val = str(value)
+            if local_data.get(key) != str_val:
+                local_data[key] = str_val
+                _save_local_json_settings(local_data)
+            return str_val
+        if key in local_data and str(local_data[key]).strip():
+            val_str = str(local_data[key])
+            SETTINGS.setValue(key, val_str)
+            SETTINGS.sync()
+            return val_str
+        return default
 
     def _setting_float(self, key: str, default: float) -> float:
         try:
@@ -74,6 +109,16 @@ class AppConfig:
         self.ACTIVE_PROJECT = self._setting_text("ACTIVE_PROJECT", "")
         self.VIBI_API_BASE = self._setting_text("VIBI_API_BASE", "https://api.vibi.pro")
         self.VIBI_API_KEY = self._setting_text("VIBI_API_KEY", "")
+        self.GEMINI_API_KEY = self._setting_text("GEMINI_API_KEY", "")
+        loaded_model = self._setting_text("GEMINI_MODEL", "gemini-3.5-flash")
+        if loaded_model in ("gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash"):
+            loaded_model = "gemini-3.5-flash"
+        self.GEMINI_MODEL = loaded_model
+        conn_setting = self._setting_text("GEMINI_CONNECTED", "")
+        if conn_setting and conn_setting.lower() in ("true", "1") and bool(self.GEMINI_API_KEY.strip()):
+            self.GEMINI_CONNECTED = True
+        else:
+            self.GEMINI_CONNECTED = False
         self.DEFAULT_VIBI_MODEL = self._setting_text("DEFAULT_VIBI_MODEL", "eleven_v3")
         self.DEFAULT_VIBI_LANGUAGE = self._setting_text("DEFAULT_VIBI_LANGUAGE", "vi")
         self.DEFAULT_VIBI_VOICE_ID = self._setting_text("DEFAULT_VIBI_VOICE_ID", "6adFm46eyy74snVn6YrT")
@@ -82,8 +127,12 @@ class AppConfig:
         self.DEFAULT_VIBI_SPEED = self._setting_float("DEFAULT_VIBI_SPEED", 1.0)
 
     def save_setting(self, key: str, value: str) -> None:
-        SETTINGS.setValue(key, str(value))
+        val_str = str(value)
+        SETTINGS.setValue(key, val_str)
         SETTINGS.sync()
+        local_data = _load_local_json_settings()
+        local_data[key] = val_str
+        _save_local_json_settings(local_data)
         self.reload()
 
 settings = AppConfig()
@@ -94,6 +143,9 @@ TTS_DOWNLOADS_DIR = settings.TTS_DOWNLOADS_DIR
 ACTIVE_PROJECT = settings.ACTIVE_PROJECT
 VIBI_API_BASE = settings.VIBI_API_BASE
 VIBI_API_KEY = settings.VIBI_API_KEY
+GEMINI_API_KEY = settings.GEMINI_API_KEY
+GEMINI_MODEL = settings.GEMINI_MODEL
+GEMINI_CONNECTED = settings.GEMINI_CONNECTED
 DEFAULT_VIBI_MODEL = settings.DEFAULT_VIBI_MODEL
 DEFAULT_VIBI_LANGUAGE = settings.DEFAULT_VIBI_LANGUAGE
 DEFAULT_VIBI_VOICE_ID = settings.DEFAULT_VIBI_VOICE_ID
@@ -107,6 +159,7 @@ def save_setting(key: str, value: str) -> None:
 
 def reload_config():
     global PROJECTS_DIR, TTS_DOWNLOADS_DIR, ACTIVE_PROJECT, VIBI_API_BASE, VIBI_API_KEY
+    global GEMINI_API_KEY, GEMINI_MODEL, GEMINI_CONNECTED
     global DEFAULT_VIBI_MODEL, DEFAULT_VIBI_LANGUAGE, DEFAULT_VIBI_VOICE_ID
     global DEFAULT_VIBI_STABILITY, DEFAULT_VIBI_SIMILARITY, DEFAULT_VIBI_SPEED
     settings.reload()
@@ -115,6 +168,9 @@ def reload_config():
     ACTIVE_PROJECT = settings.ACTIVE_PROJECT
     VIBI_API_BASE = settings.VIBI_API_BASE
     VIBI_API_KEY = settings.VIBI_API_KEY
+    GEMINI_API_KEY = settings.GEMINI_API_KEY
+    GEMINI_MODEL = settings.GEMINI_MODEL
+    GEMINI_CONNECTED = settings.GEMINI_CONNECTED
     DEFAULT_VIBI_MODEL = settings.DEFAULT_VIBI_MODEL
     DEFAULT_VIBI_LANGUAGE = settings.DEFAULT_VIBI_LANGUAGE
     DEFAULT_VIBI_VOICE_ID = settings.DEFAULT_VIBI_VOICE_ID

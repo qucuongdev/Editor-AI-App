@@ -26,6 +26,7 @@ from app.ui.settings_tab import SettingsTab
 from app.ui.tts_tab import TTSTab
 from app.ui.trending_tab import TrendingTab
 from app.ui.update_dialog import UpdateDialog
+from app.ui.gemini_key_dialog import GeminiKeyDialog
 from app.ui.watermark_tab import WatermarkTab
 from app.ui.video_watermark_tab import VideoWatermarkTab
 from app.version import APP_VERSION
@@ -113,6 +114,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.settings_tab)
 
         self.settings_tab.api_key_saved.connect(self.update_api_status_badge)
+        self.settings_tab.gemini_key_saved.connect(self._on_gemini_key_saved_from_settings)
         self.settings_tab.account_updated.connect(self.on_account_updated)
         self.tts_tab.account_updated.connect(self.on_account_updated)
         self.project_workspace.tts_tab.account_updated.connect(self.on_account_updated)
@@ -138,13 +140,73 @@ class MainWindow(QMainWindow):
     def _refresh_api_chip_display(self) -> None:
         if not hasattr(self, "api_chip"):
             return
+        has_voice_key = bool(config.settings.VIBI_API_KEY.strip())
+        has_gemini_key = bool(getattr(config, "GEMINI_API_KEY", "").strip())
+        is_gemini_connected = has_gemini_key and bool(getattr(config, "GEMINI_CONNECTED", False))
+        gemini_model = getattr(config, "GEMINI_MODEL", "gemini-1.5-flash")
+
         if self.is_sidebar_collapsed:
-            has_key = bool(config.settings.VIBI_API_KEY.strip())
-            self.api_chip.setText("🔑" if has_key else "⚠️")
-            self.api_chip.setToolTip(self._full_api_text or ("Voice API: Đã cấu hình" if has_key else "Voice API: Chưa cấu hình"))
+            self.api_chip.setText("🔑" if has_voice_key else "⚠️")
+            self.api_chip.setToolTip(self._full_api_text or ("Voice API: Đã cấu hình" if has_voice_key else "Voice API: Chưa cấu hình"))
+            if hasattr(self, "btn_gemini_chip"):
+                self.btn_gemini_chip.setText("🟢" if is_gemini_connected else "🔴")
+                self.btn_gemini_chip.setToolTip(
+                    f"Google Gemini AI: 🟢 Đã kết nối (Model: {gemini_model}) - Click để sửa"
+                    if is_gemini_connected
+                    else (
+                        "Google Gemini AI: 🔴 Chưa kết nối (Click để kiểm tra API Key)"
+                        if has_gemini_key
+                        else "Google Gemini AI: 🔴 Chưa cấu hình Key (Click để nhận & nhập Key miễn phí)"
+                    )
+                )
         else:
             self.api_chip.setText(self._full_api_text)
-            self.api_chip.setToolTip("")
+            self.api_chip.setToolTip("Click để mở Cài đặt Voice API")
+            if hasattr(self, "btn_gemini_chip"):
+                self.btn_gemini_chip.setText("🟢 Gemini AI" if is_gemini_connected else "🔴 Gemini AI")
+                self.btn_gemini_chip.setToolTip(
+                    f"Google Gemini AI: 🟢 Đã kết nối (Model: {gemini_model}) - Click để sửa"
+                    if is_gemini_connected
+                    else (
+                        "Google Gemini AI: 🔴 Chưa kết nối (Click để kiểm tra API Key)"
+                        if has_gemini_key
+                        else "Google Gemini AI: 🔴 Chưa cấu hình Key (Click để nhận & nhập Key miễn phí)"
+                    )
+                )
+
+        if hasattr(self, "btn_gemini_chip"):
+            if is_gemini_connected:
+                self.btn_gemini_chip.setStyleSheet(
+                    "background-color: #052e16; border: 1px solid #16a34a; "
+                    "border-radius: 6px; padding: 4px 6px; color: #4ade80; "
+                    "font-size: 11px; font-weight: 700; min-height: 24px;"
+                )
+            else:
+                self.btn_gemini_chip.setStyleSheet(
+                    "background-color: #450a0a; border: 1px solid #dc2626; "
+                    "border-radius: 6px; padding: 4px 6px; color: #f87171; "
+                    "font-size: 11px; font-weight: 700; min-height: 24px;"
+                )
+
+    def open_gemini_key_dialog(self) -> None:
+        """Mở hộp thoại cấu hình Google Gemini API Key trực tiếp từ sidebar."""
+        dialog = GeminiKeyDialog(self)
+        dialog.key_saved.connect(self._on_gemini_key_updated)
+        dialog.exec()
+        self._refresh_api_chip_display()
+
+    def _on_gemini_key_updated(self, key: str, model: str) -> None:
+        """Cập nhật giao diện và đồng bộ sang SettingsTab sau khi lưu Gemini Key."""
+        self._refresh_api_chip_display()
+        if hasattr(self, "settings_tab"):
+            self.settings_tab.edit_gemini_key.setText(key)
+            idx = self.settings_tab.combo_gemini_model.findData(model)
+            if idx != -1:
+                self.settings_tab.combo_gemini_model.setCurrentIndex(idx)
+
+    def _on_gemini_key_saved_from_settings(self, key: str) -> None:
+        """Cập nhật trạng thái nút trên Sidebar khi user lưu key từ trang Cài đặt."""
+        self._refresh_api_chip_display()
 
     def on_account_updated(self, info: dict) -> None:
         credits = info.get("credit_balance", info.get("credits", 0))
@@ -187,12 +249,25 @@ class MainWindow(QMainWindow):
 
         sidebar_footer = QWidget()
         sidebar_footer.setObjectName("sidebar_footer")
-        footer_layout = QVBoxLayout(sidebar_footer)
-        footer_layout.setContentsMargins(12, 12, 12, 12)
+        footer_layout = QHBoxLayout(sidebar_footer)
+        footer_layout.setContentsMargins(10, 8, 10, 8)
+        footer_layout.setSpacing(6)
+
+        # Nút Gemini API (Bên trái nút Voice API)
+        self.btn_gemini_chip = QPushButton()
+        self.btn_gemini_chip.setObjectName("gemini_chip")
+        self.btn_gemini_chip.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_gemini_chip.clicked.connect(self.open_gemini_key_dialog)
+        footer_layout.addWidget(self.btn_gemini_chip, stretch=1)
+
+        # Nút/Chip Voice API (Bên phải)
         self.api_chip = QLabel()
         self.api_chip.setObjectName("api_chip")
         self.api_chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        footer_layout.addWidget(self.api_chip)
+        self.api_chip.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.api_chip.mousePressEvent = lambda _: self.switch_page(4)
+        footer_layout.addWidget(self.api_chip, stretch=1)
+
         layout.addWidget(sidebar_footer)
         return sidebar
 

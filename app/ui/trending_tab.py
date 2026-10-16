@@ -94,6 +94,31 @@ class TrendsWorker(QThread):
                 self.error_occurred.emit(str(e))
 
 
+class GeminiIdeasWorker(QThread):
+    """Worker chạy ngầm kết nối Google Gemini AI để sinh ý tưởng video viral."""
+    ideas_ready = pyqtSignal(list)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, topic: str, count: int = 12):
+        super().__init__()
+        self.topic = topic
+        self.count = count
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
+
+    def run(self):
+        try:
+            from app.core.gemini_client import generate_video_ideas_with_gemini
+            results = generate_video_ideas_with_gemini(topic=self.topic, count=self.count)
+            if not self._is_cancelled:
+                self.ideas_ready.emit(results)
+        except Exception as e:
+            if not self._is_cancelled:
+                self.error_occurred.emit(str(e))
+
+
 class TrendingTab(QWidget):
     """Tab Khám Phá Xu Hướng & Sinh Ý Tưởng Video AI."""
 
@@ -116,6 +141,7 @@ class TrendingTab(QWidget):
         self.active_angle_filter: str = "all"
 
         self._trends_worker: Optional[TrendsWorker] = None
+        self._gemini_ideas_worker: Optional[GeminiIdeasWorker] = None
 
         self._build_ui()
         self.load_trends(geo="VN", platform="google", time_range="day")
@@ -177,7 +203,7 @@ class TrendingTab(QWidget):
         search_card = QFrame()
         search_card.setProperty("class", "panel")
         search_card.setStyleSheet(
-            "background-color: #1a1b23; border: 1px solid #2d303e; border-radius: 8px; padding: 6px 12px;"
+            "background-color: #161822; border: 1px solid #2a2f42; border-radius: 10px; padding: 8px 14px;"
         )
         search_layout = QHBoxLayout(search_card)
         search_layout.setContentsMargins(8, 4, 8, 4)
@@ -192,7 +218,7 @@ class TrendingTab(QWidget):
             "Nhập từ khóa tự do (ví dụ: Sinh tồn tài chính, Mẹo tiết kiệm bão giá, Kitô giáo, AI 2026...)"
         )
         self.txt_custom_topic.setStyleSheet(
-            "background-color: #121316; border: 1px solid #374151; border-radius: 6px; padding: 6px 12px; color: #f8fafc;"
+            "background-color: #10121a; border: 1px solid #33384c; border-radius: 8px; padding: 7px 12px; color: #f8fafc; font-size: 13px;"
         )
         self.txt_custom_topic.returnPressed.connect(self._on_generate_custom_clicked)
         search_layout.addWidget(self.txt_custom_topic, stretch=1)
@@ -205,7 +231,7 @@ class TrendingTab(QWidget):
         self.combo_suggested_topics.setObjectName("combo_suggested_topics")
         self.combo_suggested_topics.setFixedWidth(280)
         self.combo_suggested_topics.setStyleSheet(
-            "background-color: #121316; border: 1px solid #374151; border-radius: 6px; padding: 5px 10px; color: #f8fafc; font-size: 12px;"
+            "background-color: #10121a; border: 1px solid #33384c; border-radius: 8px; padding: 6px 10px; color: #f8fafc; font-size: 12px;"
         )
 
         suggested_topic_items = [
@@ -239,7 +265,8 @@ class TrendingTab(QWidget):
         self.btn_generate_custom.setObjectName("btn_primary")
         self.btn_generate_custom.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_generate_custom.setStyleSheet(
-            "background-color: #2563eb; color: #ffffff; font-weight: 700; border-radius: 6px; padding: 7px 16px; font-size: 13px;"
+            "background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6366f1, stop:1 #7c3aed); "
+            "color: #ffffff; font-weight: 700; border-radius: 8px; padding: 8px 18px; font-size: 13px; border: none;"
         )
         self.btn_generate_custom.clicked.connect(self._on_generate_custom_clicked)
         search_layout.addWidget(self.btn_generate_custom)
@@ -250,7 +277,7 @@ class TrendingTab(QWidget):
         filter_card = QFrame()
         filter_card.setProperty("class", "panel")
         filter_card.setStyleSheet(
-            "background-color: #171821; border: 1px solid #282a36; border-radius: 8px; padding: 6px 12px;"
+            "background-color: #141620; border: 1px solid #252938; border-radius: 10px; padding: 6px 12px;"
         )
         filter_layout = QHBoxLayout(filter_card)
         filter_layout.setContentsMargins(8, 6, 8, 6)
@@ -280,7 +307,8 @@ class TrendingTab(QWidget):
         self.combo_time_range.setObjectName("combo_time_range")
         for trcode, trlabel in SUPPORTED_TIME_RANGES:
             self.combo_time_range.addItem(trlabel, trcode)
-        self.combo_time_range.setFixedWidth(185)
+        self.combo_time_range.setMinimumWidth(215)
+        self.combo_time_range.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.combo_time_range.currentIndexChanged.connect(self._on_time_range_changed)
         filter_layout.addWidget(self.combo_time_range)
 
@@ -320,7 +348,7 @@ class TrendingTab(QWidget):
         self.btn_apply_date.setObjectName("btn_subtle")
         self.btn_apply_date.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_apply_date.setStyleSheet(
-            "background-color: #2563eb; color: #ffffff; font-weight: 600; padding: 4px 10px; border-radius: 4px;"
+            "background-color: #4f46e5; color: #ffffff; font-weight: 600; padding: 4px 12px; border-radius: 6px; border: none;"
         )
         self.btn_apply_date.clicked.connect(self._on_apply_custom_date)
         box_dates_layout.addWidget(self.btn_apply_date)
@@ -346,7 +374,7 @@ class TrendingTab(QWidget):
         self.btn_search_trends.setObjectName("btn_search_trends")
         self.btn_search_trends.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_search_trends.setStyleSheet(
-            "background-color: #2563eb; color: #ffffff; font-weight: 700; border-radius: 6px; padding: 6px 18px; font-size: 13px;"
+            "background-color: #4f46e5; color: #ffffff; font-weight: 700; border-radius: 8px; padding: 7px 18px; font-size: 13px; border: none;"
         )
         self.btn_search_trends.clicked.connect(self._on_search_clicked)
         filter_layout.addWidget(self.btn_search_trends)
@@ -480,14 +508,14 @@ class TrendingTab(QWidget):
         card.setStyleSheet(
             """
             QFrame {
-                background-color: #171821;
-                border: 1px solid #282a36;
-                border-radius: 8px;
+                background-color: #141721;
+                border: 1px solid #272b3a;
+                border-radius: 10px;
                 padding: 12px 16px;
             }
             QFrame:hover {
-                background-color: #1e202d;
-                border: 1px solid #3b82f6;
+                background-color: #1a1e2b;
+                border: 1px solid #6366f1;
             }
             """
         )
@@ -501,7 +529,7 @@ class TrendingTab(QWidget):
         rank_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         rank_badge.setFixedSize(42, 42)
         rank_badge.setStyleSheet(
-            "background-color: #1e293b; color: #38bdf8; font-size: 15px; font-weight: 800; border-radius: 6px;"
+            "background-color: #1e2230; color: #38bdf8; font-size: 15px; font-weight: 800; border-radius: 8px;"
         )
         layout.addWidget(rank_badge)
 
@@ -517,7 +545,7 @@ class TrendingTab(QWidget):
         plat_name = item.get("platform_name") or "Xu hướng"
         plat_badge = QLabel(f"{plat_icon} {plat_name}")
         plat_badge.setStyleSheet(
-            "background-color: #1e293b; color: #94a3b8; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; border: 1px solid #334155;"
+            "background-color: #1e2230; color: #94a3b8; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; border: 1px solid #334155;"
         )
         top_row.addWidget(plat_badge)
 
@@ -551,7 +579,7 @@ class TrendingTab(QWidget):
         btn_action.setObjectName("btn_subtle")
         btn_action.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_action.setStyleSheet(
-            "background-color: #1e293b; color: #38bdf8; font-weight: 600; padding: 8px 14px; border-radius: 6px; border: 1px solid #334155;"
+            "background-color: #1e2230; color: #a5b4fc; font-weight: 700; padding: 8px 16px; border-radius: 6px; border: 1px solid #6366f1;"
         )
         topic_title = item["title"]
         btn_action.clicked.connect(lambda _, t=topic_title: self.open_ideas_for_topic(t))
@@ -605,33 +633,67 @@ class TrendingTab(QWidget):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
 
-        # Nav Header
+        # Nav Header Bar
         top_nav = QHBoxLayout()
         top_nav.setSpacing(10)
 
         self.btn_back_to_trends = QPushButton("← Trở về Xu Hướng")
         self.btn_back_to_trends.setObjectName("btn_subtle")
         self.btn_back_to_trends.setFixedWidth(150)
+        self.btn_back_to_trends.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_back_to_trends.clicked.connect(lambda: self.stack.setCurrentIndex(self.PAGE_TRENDS))
         top_nav.addWidget(self.btn_back_to_trends)
 
         self.lbl_active_topic = QLabel("Chủ đề: ...")
-        self.lbl_active_topic.setStyleSheet("font-size: 16px; font-weight: 700; color: #38bdf8;")
+        self.lbl_active_topic.setStyleSheet("font-size: 15px; font-weight: 700; color: #38bdf8;")
         top_nav.addWidget(self.lbl_active_topic, stretch=1)
+
+        # Source badge (Gemini AI vs Offline template)
+        self.lbl_ideas_source_badge = QLabel("📐 Mẫu Offline (75 ý tưởng)")
+        self.lbl_ideas_source_badge.setStyleSheet(
+            "background-color: #1e293b; color: #94a3b8; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 6px; border: 1px solid #334155;"
+        )
+        top_nav.addWidget(self.lbl_ideas_source_badge)
+
+        # Regenerate / Rerun AI button
+        self.btn_refresh_ideas = QPushButton("🔄 Sinh Lại Ý Tưởng")
+        self.btn_refresh_ideas.setObjectName("btn_subtle")
+        self.btn_refresh_ideas.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_refresh_ideas.setStyleSheet(
+            "background-color: #1e293b; color: #38bdf8; font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 6px; border: 1px solid #334155;"
+        )
+        self.btn_refresh_ideas.clicked.connect(self._on_refresh_ideas_clicked)
+        top_nav.addWidget(self.btn_refresh_ideas)
 
         # Fast Filter text input
         self.txt_filter_ideas = QLineEdit()
         self.txt_filter_ideas.setPlaceholderText("🔍 Lọc nhanh ý tưởng...")
-        self.txt_filter_ideas.setFixedWidth(240)
+        self.txt_filter_ideas.setFixedWidth(220)
         self.txt_filter_ideas.setStyleSheet(
-            "background-color: #121316; border: 1px solid #374151; border-radius: 6px; padding: 6px 10px; color: #f8fafc;"
+            "background-color: #121316; border: 1px solid #374151; border-radius: 6px; padding: 5px 10px; color: #f8fafc; font-size: 12px;"
         )
         self.txt_filter_ideas.textChanged.connect(self._apply_ideas_filter)
         top_nav.addWidget(self.txt_filter_ideas)
 
         layout.addLayout(top_nav)
+
+        # Status row & Progress bar
+        self.lbl_ideas_status = QLabel("")
+        self.lbl_ideas_status.setStyleSheet("color: #94a3b8; font-style: italic; font-size: 12px;")
+        layout.addWidget(self.lbl_ideas_status)
+
+        self.progress_ideas = QProgressBar()
+        self.progress_ideas.setRange(0, 0)
+        self.progress_ideas.setFixedHeight(3)
+        self.progress_ideas.setTextVisible(False)
+        self.progress_ideas.setStyleSheet(
+            "QProgressBar { background-color: #1e293b; border: none; border-radius: 1px; } "
+            "QProgressBar::chunk { background-color: #a855f7; border-radius: 1px; }"
+        )
+        self.progress_ideas.setVisible(False)
+        layout.addWidget(self.progress_ideas)
 
         # Angle Filter Tabs Row
         filter_row = QHBoxLayout()
@@ -660,9 +722,10 @@ class TrendingTab(QWidget):
                     background-color: #171821;
                     border: 1px solid #2d303e;
                     border-radius: 6px;
-                    padding: 6px 14px;
+                    padding: 5px 12px;
                     color: #94a3b8;
                     font-weight: 600;
+                    font-size: 12px;
                 }
                 QPushButton:checked {
                     background-color: #1d4ed8;
@@ -680,35 +743,156 @@ class TrendingTab(QWidget):
             filter_row.addWidget(btn)
 
         filter_row.addStretch()
+
+        # Target duration selector for Ideas page
+        lbl_dur_ideas = QLabel("⏱ Thời lượng mục tiêu:")
+        lbl_dur_ideas.setStyleSheet("font-size: 12px; font-weight: 600; color: #cbd5e1;")
+        filter_row.addWidget(lbl_dur_ideas)
+
+        self.combo_ideas_duration = QComboBox()
+        self.combo_ideas_duration.setObjectName("combo_ideas_duration")
+        self.combo_ideas_duration.setMinimumWidth(215)
+        self.combo_ideas_duration.setStyleSheet(
+            "background-color: #171821; border: 1px solid #33384c; border-radius: 6px; padding: 4px 10px; color: #f8fafc; font-size: 12px;"
+        )
+        for dur, label, _, _ in DURATION_PRESETS:
+            self.combo_ideas_duration.addItem(label, dur)
+        self.combo_ideas_duration.setCurrentIndex(1)  # Default 60s
+        self.combo_ideas_duration.currentIndexChanged.connect(self._on_ideas_duration_changed)
+        filter_row.addWidget(self.combo_ideas_duration)
+
+        self.box_ideas_custom_time = QWidget()
+        self.box_ideas_custom_time.setObjectName("box_ideas_custom_time")
+        ideas_custom_layout = QHBoxLayout(self.box_ideas_custom_time)
+        ideas_custom_layout.setContentsMargins(0, 0, 0, 0)
+        ideas_custom_layout.setSpacing(4)
+
+        self.spin_ideas_custom_min = QSpinBox()
+        self.spin_ideas_custom_min.setRange(0, 180)
+        self.spin_ideas_custom_min.setValue(7)
+        self.spin_ideas_custom_min.setSuffix(" phút")
+        self.spin_ideas_custom_min.setStyleSheet(
+            "background-color: #10121a; border: 1px solid #33384c; border-radius: 5px; padding: 3px 6px; color: #f8fafc; font-size: 12px;"
+        )
+        ideas_custom_layout.addWidget(self.spin_ideas_custom_min)
+
+        self.spin_ideas_custom_sec = QSpinBox()
+        self.spin_ideas_custom_sec.setRange(0, 59)
+        self.spin_ideas_custom_sec.setValue(0)
+        self.spin_ideas_custom_sec.setSuffix(" giây")
+        self.spin_ideas_custom_sec.setStyleSheet(
+            "background-color: #10121a; border: 1px solid #33384c; border-radius: 5px; padding: 3px 6px; color: #f8fafc; font-size: 12px;"
+        )
+        ideas_custom_layout.addWidget(self.spin_ideas_custom_sec)
+
+        self.box_ideas_custom_time.setVisible(False)
+        filter_row.addWidget(self.box_ideas_custom_time)
+
         layout.addLayout(filter_row)
 
-        # Idea Scroll List
+        # Idea Scroll List (Lưới 2 Cột Studio Hiện Đại)
         self.scroll_ideas = QScrollArea()
         self.scroll_ideas.setWidgetResizable(True)
         self.scroll_ideas.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll_ideas.setStyleSheet("background: transparent;")
 
         self.ideas_container = QWidget()
-        self.ideas_layout = QVBoxLayout(self.ideas_container)
-        self.ideas_layout.setContentsMargins(0, 0, 0, 0)
-        self.ideas_layout.setSpacing(10)
-        self.ideas_layout.addStretch()
+        self.ideas_layout = QGridLayout(self.ideas_container)
+        self.ideas_layout.setContentsMargins(0, 0, 10, 10)
+        self.ideas_layout.setSpacing(14)
 
         self.scroll_ideas.setWidget(self.ideas_container)
         layout.addWidget(self.scroll_ideas, stretch=1)
         return widget
 
-    def open_ideas_for_topic(self, topic: str):
+    def open_ideas_for_topic(self, topic: str, force_offline: bool = False):
         self.active_topic = topic.strip()
-        self.lbl_active_topic.setText(f"🎯 75 Ý tưởng độc đáo cho: '{self.active_topic}'")
         self.txt_filter_ideas.clear()
         self.active_angle_filter = "all"
         if "all" in self.filter_buttons:
             self.filter_buttons["all"].setChecked(True)
 
-        self.current_ideas = generate_video_ideas(self.active_topic, max_per_angle=15)
-        self._render_ideas_list(self.current_ideas)
+        from app import config
+        is_gemini_active = bool(
+            getattr(config, "GEMINI_CONNECTED", False)
+            and getattr(config, "GEMINI_API_KEY", "").strip()
+            and not force_offline
+        )
+
+        if is_gemini_active:
+            model_name = getattr(config, "GEMINI_MODEL", "gemini-3.5-flash")
+            self.lbl_active_topic.setText(f"🎯 Ý tưởng video AI: '{self.active_topic}'")
+            self.lbl_ideas_source_badge.setText(f"✨ Gemini AI ({model_name})")
+            self.lbl_ideas_source_badge.setStyleSheet(
+                "background-color: #064e3b; color: #34d399; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; border: 1px solid #059669;"
+            )
+            self.lbl_ideas_status.setText(f"⏳ Gemini AI ({model_name}) đang phân tích chủ đề và sáng tạo ý tưởng video viral...")
+            self.progress_ideas.setVisible(True)
+            self.btn_refresh_ideas.setEnabled(False)
+            self.btn_refresh_ideas.setText("⏳ Đang sinh...")
+
+            if self._gemini_ideas_worker:
+                self._gemini_ideas_worker.cancel()
+                try:
+                    self._gemini_ideas_worker.ideas_ready.disconnect()
+                    self._gemini_ideas_worker.error_occurred.disconnect()
+                except Exception:
+                    pass
+                if self._gemini_ideas_worker.isRunning():
+                    self._gemini_ideas_worker.wait(1000)
+
+            # Clear danh sách cũ
+            while self.ideas_layout.count() > 0:
+                child = self.ideas_layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+
+            self._gemini_ideas_worker = GeminiIdeasWorker(topic=self.active_topic, count=12)
+            self._gemini_ideas_worker.ideas_ready.connect(self._on_gemini_ideas_ready)
+            self._gemini_ideas_worker.error_occurred.connect(self._on_gemini_ideas_error)
+            self._gemini_ideas_worker.start()
+        else:
+            self.progress_ideas.setVisible(False)
+            self.btn_refresh_ideas.setEnabled(True)
+            self.btn_refresh_ideas.setText("🔄 Làm mới ý tưởng")
+            self.lbl_ideas_source_badge.setText("📐 Mẫu Offline (75 ý tưởng)")
+            self.lbl_ideas_source_badge.setStyleSheet(
+                "background-color: #1e293b; color: #94a3b8; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 6px; border: 1px solid #334155;"
+            )
+            self.lbl_active_topic.setText(f"🎯 75 Ý tưởng độc đáo: '{self.active_topic}'")
+            self.lbl_ideas_status.setText("💡 Mẹo: Kết nối Gemini AI ở góc dưới Sidebar để tự động sinh ý tưởng viral độc nhất và không bị trùng lặp.")
+            self.current_ideas = generate_video_ideas(self.active_topic, max_per_angle=15)
+            self._render_ideas_list(self.current_ideas)
+
         self.stack.setCurrentIndex(self.PAGE_IDEAS)
+
+    def _on_gemini_ideas_ready(self, ideas: List[Dict[str, Any]]):
+        self.progress_ideas.setVisible(False)
+        self.btn_refresh_ideas.setEnabled(True)
+        self.btn_refresh_ideas.setText("🔄 AI Sinh Lại / Thêm")
+        self.current_ideas = ideas
+        from app import config
+        model_name = getattr(config, "GEMINI_MODEL", "gemini-3.5-flash")
+        self.lbl_active_topic.setText(f"🎯 {len(ideas)} Ý Tưởng Viral Sáng Tạo Bởi Gemini AI: '{self.active_topic}'")
+        self.lbl_ideas_status.setText(f"✓ Gemini AI ({model_name}) đã tạo thành công {len(ideas)} ý tưởng sắc bén. Bạn có thể bấm AI Phân Cảnh hoặc Đọc Voice ngay.")
+        self._render_ideas_list(ideas)
+
+    def _on_gemini_ideas_error(self, err_msg: str):
+        self.progress_ideas.setVisible(False)
+        self.btn_refresh_ideas.setEnabled(True)
+        self.btn_refresh_ideas.setText("🔄 Sinh Lại Ý Tưởng")
+        self.current_ideas = generate_video_ideas(self.active_topic, max_per_angle=15)
+        self.lbl_active_topic.setText(f"🎯 75 Ý tưởng cho: '{self.active_topic}'")
+        self.lbl_ideas_source_badge.setText("📐 Mẫu Offline (Dự phòng)")
+        self.lbl_ideas_source_badge.setStyleSheet(
+            "background-color: #451a03; color: #f97316; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 6px; border: 1px solid #ea580c;"
+        )
+        self.lbl_ideas_status.setText(f"⚠️ Gemini AI gặp lỗi ({err_msg}). Đã tự động kích hoạt 75 ý tưởng mẫu offline.")
+        self._render_ideas_list(self.current_ideas)
+
+    def _on_refresh_ideas_clicked(self):
+        if self.active_topic:
+            self.open_ideas_for_topic(self.active_topic)
 
     def _on_angle_filter_changed(self, angle_key: str):
         self.active_angle_filter = angle_key
@@ -726,14 +910,19 @@ class TrendingTab(QWidget):
         self._render_ideas_list(filtered)
 
     def _render_ideas_list(self, ideas: List[Dict[str, Any]]):
-        while self.ideas_layout.count() > 1:
+        while self.ideas_layout.count() > 0:
             child = self.ideas_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
 
-        for idea in ideas:
+        for idx, idea in enumerate(ideas):
             card = self._create_idea_card(idea)
-            self.ideas_layout.insertWidget(self.ideas_layout.count() - 1, card)
+            row = idx // 2
+            col = idx % 2
+            if isinstance(self.ideas_layout, QGridLayout):
+                self.ideas_layout.addWidget(card, row, col)
+            else:
+                self.ideas_layout.addWidget(card)
 
     def _create_idea_card(self, idea: Dict[str, Any]) -> QFrame:
         card = QFrame()
@@ -741,80 +930,204 @@ class TrendingTab(QWidget):
         card.setStyleSheet(
             """
             QFrame {
-                background-color: #171821;
-                border: 1px solid #282a36;
-                border-radius: 8px;
-                padding: 12px 16px;
+                background-color: #141721;
+                border: 1px solid #272b3a;
+                border-radius: 12px;
+                padding: 14px 16px;
             }
             QFrame:hover {
-                background-color: #1c1e2b;
-                border: 1px solid #3b82f6;
+                background-color: #181c28;
+                border: 1px solid #6366f1;
             }
             """
         )
 
-        layout = QHBoxLayout(card)
+        layout = QVBoxLayout(card)
         layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(14)
+        layout.setSpacing(10)
 
-        # Left Info
-        info_col = QVBoxLayout()
-        info_col.setSpacing(6)
+        # 1. Top Row: Index Badge, Angle Badge, AI Badge
+        top_row = QHBoxLayout()
+        top_row.setSpacing(8)
 
-        header_line = QHBoxLayout()
-        header_line.setSpacing(8)
-
-        angle_lbl = QLabel(idea["angle_label"])
-        angle_lbl.setStyleSheet(
-            "background-color: #1e293b; color: #38bdf8; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px;"
+        idx_str = f"#{idea.get('index', 1):02d}"
+        lbl_idx = QLabel(idx_str)
+        lbl_idx.setStyleSheet(
+            "background-color: #1e2230; color: #94a3b8; font-size: 11px; font-weight: 700; "
+            "font-family: monospace; padding: 2px 7px; border-radius: 4px;"
         )
-        header_line.addWidget(angle_lbl)
+        top_row.addWidget(lbl_idx)
 
-        id_lbl = QLabel(f"#{idea['index']}")
-        id_lbl.setStyleSheet("color: #64748b; font-size: 11px; font-weight: 600;")
-        header_line.addWidget(id_lbl)
-        header_line.addStretch()
-        info_col.addLayout(header_line)
+        angle = idea.get("angle", "mystery")
+        angle_label = idea.get("angle_label", "🎯 Ý tưởng")
+        angle_styles = {
+            "mystery": "background-color: #3b1118; color: #fb7185; border: 1px solid #9f1239;",
+            "advice": "background-color: #064e3b; color: #34d399; border: 1px solid #059669;",
+            "debate": "background-color: #431407; color: #fb923c; border: 1px solid #ea580c;",
+            "story": "background-color: #1e1b4b; color: #a5b4fc; border: 1px solid #4f46e5;",
+            "humor": "background-color: #3b1c54; color: #c084fc; border: 1px solid #9333ea;",
+            "future": "background-color: #083344; color: #38bdf8; border: 1px solid #0284c7;",
+        }
+        style = angle_styles.get(angle, "background-color: #1e293b; color: #38bdf8; border: 1px solid #334155;")
+        lbl_angle = QLabel(angle_label)
+        lbl_angle.setStyleSheet(f"{style} font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px;")
+        top_row.addWidget(lbl_angle)
 
+        if idea.get("is_ai_generated"):
+            lbl_ai = QLabel("✨ Gemini AI")
+            lbl_ai.setStyleSheet(
+                "background-color: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid #10b981;"
+            )
+            top_row.addWidget(lbl_ai)
+
+        top_row.addStretch()
+        layout.addLayout(top_row)
+
+        # 2. Title
         title_lbl = QLabel(idea["title"])
-        title_lbl.setStyleSheet("font-size: 15px; font-weight: 700; color: #f8fafc;")
+        title_lbl.setStyleSheet("font-size: 15px; font-weight: 700; color: #ffffff; line-height: 1.3;")
         title_lbl.setWordWrap(True)
-        info_col.addWidget(title_lbl)
+        layout.addWidget(title_lbl)
 
-        desc_lbl = QLabel(idea["description"])
-        desc_lbl.setStyleSheet("font-size: 12px; color: #94a3b8;")
-        desc_lbl.setWordWrap(True)
-        info_col.addWidget(desc_lbl)
+        # 3. Hook 3s (Nổi bật, khung vàng hổ phách)
+        hook = idea.get("hook_preview") or idea.get("hook") or ""
+        if hook:
+            hook_frame = QFrame()
+            hook_frame.setStyleSheet(
+                "background-color: rgba(245, 158, 11, 0.08); border-left: 3px solid #f59e0b; border-radius: 4px; padding: 6px 10px;"
+            )
+            hook_box = QHBoxLayout(hook_frame)
+            hook_box.setContentsMargins(4, 2, 4, 2)
+            hook_lbl = QLabel(f"🔥 Hook 3s đầu: \"{hook}\"")
+            hook_lbl.setStyleSheet("color: #fef3c7; font-size: 12px; font-style: italic; line-height: 1.3;")
+            hook_lbl.setWordWrap(True)
+            hook_box.addWidget(hook_lbl)
+            layout.addWidget(hook_frame)
 
-        layout.addLayout(info_col, stretch=1)
+        # 4. Description
+        desc = idea.get("description", "")
+        if desc:
+            desc_lbl = QLabel(f"📝 {desc}")
+            desc_lbl.setStyleSheet("font-size: 12px; color: #94a3b8; line-height: 1.35;")
+            desc_lbl.setWordWrap(True)
+            layout.addWidget(desc_lbl)
 
-        # Action button
-        btn_select = QPushButton("🚀 Tạo Master Prompt")
+        # 5. Action Row: 3 nút hành động trực tiếp khoa học
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        action_row.addStretch()
+
+        btn_direct_storyboard = QPushButton("⚡ AI Phân Cảnh")
+        btn_direct_storyboard.setToolTip("Mở Storyboard Studio để AI viết kịch bản chi tiết từng cảnh")
+        btn_direct_storyboard.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_direct_storyboard.setStyleSheet(
+            "background-color: #6366f1; color: #ffffff; font-weight: 700; font-size: 11px; border-radius: 6px; padding: 6px 12px; border: none;"
+        )
+        btn_direct_storyboard.clicked.connect(lambda _, idata=idea: self._on_direct_storyboard_from_idea(idata))
+        action_row.addWidget(btn_direct_storyboard)
+
+        btn_direct_tts = QPushButton("🎙 Đọc Voice")
+        btn_direct_tts.setToolTip("Tự động chuyển kịch bản sang Tab Giọng Nói để đọc voice")
+        btn_direct_tts.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_direct_tts.setStyleSheet(
+            "background-color: #1e293b; color: #34d399; font-weight: 600; font-size: 11px; border-radius: 6px; padding: 6px 12px; border: 1px solid #10b981;"
+        )
+        btn_direct_tts.clicked.connect(lambda _, idata=idea: self._on_direct_tts_from_idea(idata))
+        action_row.addWidget(btn_direct_tts)
+
+        btn_select = QPushButton("🚀 Master Prompt")
+        btn_select.setToolTip("Tùy biến Master Prompt chi tiết theo thời lượng và nền tảng")
         btn_select.setObjectName("btn_primary")
         btn_select.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_select.setStyleSheet(
-            "background-color: #2563eb; color: #ffffff; font-weight: 700; border-radius: 6px; padding: 8px 16px;"
+            "background-color: #1e293b; color: #cbd5e1; font-weight: 600; font-size: 11px; border-radius: 6px; padding: 6px 12px; border: 1px solid #334155;"
         )
         btn_select.clicked.connect(lambda _, idata=idea: self.open_prompt_studio(idata))
-        layout.addWidget(btn_select)
+        action_row.addWidget(btn_select)
 
+        layout.addLayout(action_row)
         return card
 
-    # ================= PAGE 2: MASTER PROMPT STUDIO =================
+    def _on_ideas_duration_changed(self):
+        is_custom = (self.combo_ideas_duration.currentData() == -1)
+        self.box_ideas_custom_time.setVisible(is_custom)
+
+    def get_selected_ideas_duration(self) -> int:
+        dur_val = self.combo_ideas_duration.currentData()
+        if dur_val == -1:
+            duration = self.spin_ideas_custom_min.value() * 60 + self.spin_ideas_custom_sec.value()
+            return duration if duration > 0 else 60
+        return dur_val if dur_val is not None and dur_val > 0 else 60
+
+    def _on_direct_storyboard_from_idea(self, idea: Dict[str, Any]):
+        title = idea.get("title", "")
+        angle = idea.get("angle", "mystery")
+        tone_map = {
+            "mystery": "dramatic",
+            "advice": "inspirational",
+            "debate": "dramatic",
+            "story": "emotional",
+            "humor": "humorous",
+            "future": "tech",
+        }
+        tone = tone_map.get(angle, "dramatic")
+        duration = self.get_selected_ideas_duration()
+        if duration <= 35:
+            scene_count = 3
+        elif duration <= 75:
+            scene_count = 5
+        elif duration <= 150:
+            scene_count = 8
+        else:
+            scene_count = 10
+
+        dlg = StoryboardDialog(
+            topic=title,
+            duration_seconds=duration,
+            scene_count=scene_count,
+            tone=tone,
+            aspect_ratio="9:16",
+            parent=self,
+        )
+        dlg.send_to_tts_requested.connect(self.request_open_tts.emit)
+        dlg.exec()
+
+    def _on_direct_tts_from_idea(self, idea: Dict[str, Any]):
+        from app.core.storyboard_generator import generate_full_script_for_topic
+        topic = idea.get("title", "")
+        angle = idea.get("angle", "mystery")
+        tone_map = {
+            "mystery": "mystery",
+            "advice": "educational",
+            "debate": "shocking",
+            "story": "storytelling",
+            "humor": "humorous",
+            "future": "mystery",
+        }
+        tone = tone_map.get(angle, "mystery")
+        duration = self.get_selected_ideas_duration()
+        script = generate_full_script_for_topic(topic=topic, duration_seconds=duration, tone=tone)
+        if script:
+            clipboard = QApplication.clipboard()
+            clipboard.setText(script)
+        self.request_open_tts.emit(script)
+
+    # ================= PAGE 2: MASTER PROMPT STUDIO (SPLIT VIEW) =================
     def _build_prompt_page(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
 
-        # Header Row
+        # 1. Header Row
         nav_row = QHBoxLayout()
         nav_row.setSpacing(12)
 
         self.btn_back_to_ideas = QPushButton("← Trở về danh sách ý tưởng")
         self.btn_back_to_ideas.setObjectName("btn_subtle")
         self.btn_back_to_ideas.setFixedWidth(190)
-        self.btn_back_to_ideas.clicked.connect(lambda: self.stack.setCurrentIndex(self.PAGE_IDEAS))
+        self.btn_back_to_ideas.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_back_to_ideas.clicked.connect(self._on_back_to_ideas_clicked)
         nav_row.addWidget(self.btn_back_to_ideas)
 
         self.lbl_prompt_idea_title = QLabel("Ý tưởng: ...")
@@ -823,109 +1136,187 @@ class TrendingTab(QWidget):
 
         layout.addLayout(nav_row)
 
-        # Control Panel Box
-        controls_card = QFrame()
-        controls_card.setProperty("class", "panel")
-        controls_card.setStyleSheet("background-color: #171821; border: 1px solid #282a36; border-radius: 8px; padding: 12px;")
-        ctrl_layout = QGridLayout(controls_card)
-        ctrl_layout.setContentsMargins(12, 10, 12, 10)
-        ctrl_layout.setHorizontalSpacing(16)
-        ctrl_layout.setVerticalSpacing(8)
+        # 2. Main 2-Column Split Layout
+        split_layout = QHBoxLayout()
+        split_layout.setSpacing(16)
 
-        # Duration
-        lbl_dur = QLabel("Thời lượng phát mục tiêu:")
-        lbl_dur.setStyleSheet("font-weight: 600; color: #cbd5e1;")
-        ctrl_layout.addWidget(lbl_dur, 0, 0)
+        # ---------------- CỘT TRÁI: SIDEBAR CẤU HÌNH (Width: 350px) ----------------
+        sidebar_frame = QFrame()
+        sidebar_frame.setObjectName("prompt_sidebar_frame")
+        sidebar_frame.setFixedWidth(350)
+        sidebar_frame.setStyleSheet(
+            "QFrame#prompt_sidebar_frame { background-color: #141721; border: 1px solid #272b3a; border-radius: 10px; }"
+        )
+        sidebar_layout = QVBoxLayout(sidebar_frame)
+        sidebar_layout.setContentsMargins(14, 14, 14, 14)
+        sidebar_layout.setSpacing(10)
 
-        duration_row = QHBoxLayout()
-        duration_row.setSpacing(6)
+        lbl_cfg_title = QLabel("⚙️ THIẾT LẬP KỊCH BẢN VIDEO")
+        lbl_cfg_title.setStyleSheet("font-size: 13px; font-weight: 700; color: #f8fafc; letter-spacing: 0.5px;")
+        sidebar_layout.addWidget(lbl_cfg_title)
+
+        # Thời lượng
+        lbl_dur = QLabel("⏱ Thời lượng phát mục tiêu:")
+        lbl_dur.setStyleSheet("font-size: 12px; font-weight: 600; color: #cbd5e1;")
+        sidebar_layout.addWidget(lbl_dur)
 
         self.combo_duration = QComboBox()
+        self.combo_duration.setObjectName("combo_duration")
+        self.combo_duration.setStyleSheet(
+            "background-color: #10121a; border: 1px solid #33384c; border-radius: 6px; padding: 6px 10px; color: #f8fafc; font-size: 12px;"
+        )
         for dur, label, _, _ in DURATION_PRESETS:
             self.combo_duration.addItem(label, dur)
         self.combo_duration.setCurrentIndex(1)  # Default 60s
         self.combo_duration.currentIndexChanged.connect(self._on_duration_combo_changed)
-        duration_row.addWidget(self.combo_duration, stretch=1)
+        sidebar_layout.addWidget(self.combo_duration)
 
         self.box_custom_time = QWidget()
+        self.box_custom_time.setObjectName("box_custom_time")
         custom_layout = QHBoxLayout(self.box_custom_time)
-        custom_layout.setContentsMargins(0, 0, 0, 0)
-        custom_layout.setSpacing(4)
+        custom_layout.setContentsMargins(0, 2, 0, 2)
+        custom_layout.setSpacing(6)
+
+        lbl_custom_prefix = QLabel("⏱ Tùy chỉnh:")
+        lbl_custom_prefix.setStyleSheet("color: #94a3b8; font-size: 12px; font-weight: 600;")
+        custom_layout.addWidget(lbl_custom_prefix)
 
         self.spin_custom_min = QSpinBox()
         self.spin_custom_min.setRange(0, 180)
         self.spin_custom_min.setValue(7)
         self.spin_custom_min.setSuffix(" phút")
         self.spin_custom_min.setToolTip("Nhập số phút tùy ý (từ 0 đến 180 phút)")
+        self.spin_custom_min.setStyleSheet(
+            "background-color: #10121a; border: 1px solid #33384c; border-radius: 6px; padding: 4px 8px; color: #f8fafc; font-size: 12px;"
+        )
         self.spin_custom_min.valueChanged.connect(self._rebuild_prompt)
-        custom_layout.addWidget(self.spin_custom_min)
+        custom_layout.addWidget(self.spin_custom_min, stretch=1)
 
         self.spin_custom_sec = QSpinBox()
         self.spin_custom_sec.setRange(0, 59)
         self.spin_custom_sec.setValue(0)
         self.spin_custom_sec.setSuffix(" giây")
         self.spin_custom_sec.setToolTip("Nhập số giây tùy ý (từ 0 đến 59 giây)")
+        self.spin_custom_sec.setStyleSheet(
+            "background-color: #10121a; border: 1px solid #33384c; border-radius: 6px; padding: 4px 8px; color: #f8fafc; font-size: 12px;"
+        )
         self.spin_custom_sec.valueChanged.connect(self._rebuild_prompt)
-        custom_layout.addWidget(self.spin_custom_sec)
+        custom_layout.addWidget(self.spin_custom_sec, stretch=1)
 
         self.box_custom_time.setVisible(False)
-        duration_row.addWidget(self.box_custom_time)
+        sidebar_layout.addWidget(self.box_custom_time)
 
-        ctrl_layout.addLayout(duration_row, 0, 1)
-
-        # Tone
-        lbl_tone = QLabel("Phong cách & Tông giọng:")
-        lbl_tone.setStyleSheet("font-weight: 600; color: #cbd5e1;")
-        ctrl_layout.addWidget(lbl_tone, 0, 2)
-
-        self.combo_tone = QComboBox()
-        for tkey, tlabel in TONE_PRESETS:
-            self.combo_tone.addItem(tlabel, tkey)
-        self.combo_tone.currentIndexChanged.connect(self._rebuild_prompt)
-        ctrl_layout.addWidget(self.combo_tone, 0, 3)
-
-        # Platform
-        lbl_plat = QLabel("Nền tảng & Tỉ lệ:")
-        lbl_plat.setStyleSheet("font-weight: 600; color: #cbd5e1;")
-        ctrl_layout.addWidget(lbl_plat, 1, 0)
+        # Nền tảng & Tỉ lệ
+        lbl_plat = QLabel("📱 Nền tảng & Tỉ lệ:")
+        lbl_plat.setStyleSheet("font-size: 12px; font-weight: 600; color: #cbd5e1;")
+        sidebar_layout.addWidget(lbl_plat)
 
         self.combo_platform = QComboBox()
+        self.combo_platform.setStyleSheet(
+            "background-color: #10121a; border: 1px solid #33384c; border-radius: 6px; padding: 6px 10px; color: #f8fafc; font-size: 12px;"
+        )
         for pkey, plabel in PLATFORM_PRESETS:
             self.combo_platform.addItem(plabel, pkey)
         self.combo_platform.currentIndexChanged.connect(self._rebuild_prompt)
-        ctrl_layout.addWidget(self.combo_platform, 1, 1)
+        sidebar_layout.addWidget(self.combo_platform)
 
-        # Language
-        lbl_lang = QLabel("Ngôn ngữ kịch bản:")
-        lbl_lang.setStyleSheet("font-weight: 600; color: #cbd5e1;")
-        ctrl_layout.addWidget(lbl_lang, 1, 2)
+        # Phong cách & Tông giọng
+        lbl_tone = QLabel("🎭 Phong cách & Tông giọng:")
+        lbl_tone.setStyleSheet("font-size: 12px; font-weight: 600; color: #cbd5e1;")
+        sidebar_layout.addWidget(lbl_tone)
+
+        self.combo_tone = QComboBox()
+        self.combo_tone.setStyleSheet(
+            "background-color: #10121a; border: 1px solid #33384c; border-radius: 6px; padding: 6px 10px; color: #f8fafc; font-size: 12px;"
+        )
+        for tkey, tlabel in TONE_PRESETS:
+            self.combo_tone.addItem(tlabel, tkey)
+        self.combo_tone.currentIndexChanged.connect(self._rebuild_prompt)
+        sidebar_layout.addWidget(self.combo_tone)
+
+        # Ngôn ngữ
+        lbl_lang = QLabel("🌐 Ngôn ngữ kịch bản:")
+        lbl_lang.setStyleSheet("font-size: 12px; font-weight: 600; color: #cbd5e1;")
+        sidebar_layout.addWidget(lbl_lang)
 
         self.combo_language = QComboBox()
+        self.combo_language.setStyleSheet(
+            "background-color: #10121a; border: 1px solid #33384c; border-radius: 6px; padding: 6px 10px; color: #f8fafc; font-size: 12px;"
+        )
         for lcode, llabel in LANGUAGE_PRESETS:
             self.combo_language.addItem(llabel, lcode)
         self.combo_language.currentIndexChanged.connect(self._rebuild_prompt)
-        ctrl_layout.addWidget(self.combo_language, 1, 3)
+        sidebar_layout.addWidget(self.combo_language)
 
-        # Options
-        self.chk_scenes = QCheckBox("Kèm phân cảnh SC01, SC02... & Prompt vẽ ảnh (Midjourney/Flux)")
+        # Checkbox Phân cảnh
+        self.chk_scenes = QCheckBox("Kèm phân cảnh SC01, SC02... & Prompt vẽ ảnh")
         self.chk_scenes.setChecked(True)
-        self.chk_scenes.setStyleSheet("font-weight: 600; color: #cbd5e1;")
+        self.chk_scenes.setStyleSheet("font-weight: 600; color: #cbd5e1; font-size: 12px;")
         self.chk_scenes.stateChanged.connect(self._rebuild_prompt)
-        ctrl_layout.addWidget(self.chk_scenes, 2, 0, 1, 4)
+        sidebar_layout.addWidget(self.chk_scenes)
 
-        layout.addWidget(controls_card)
+        # Divider
+        div_line = QFrame()
+        div_line.setFrameShape(QFrame.Shape.HLine)
+        div_line.setStyleSheet("background-color: #272b3a; max-height: 1px;")
+        sidebar_layout.addWidget(div_line)
 
-        # Prompt Preview Header
+        # Action Buttons
+        lbl_actions = QLabel("🚀 HÀNH ĐỘNG NHANH 1-CLICK:")
+        lbl_actions.setStyleSheet("font-size: 11px; font-weight: 700; color: #94a3b8;")
+        sidebar_layout.addWidget(lbl_actions)
+
+        self.btn_open_storyboard = QPushButton("⚡ Sinh Kịch Bản Phân Cảnh (AI Storyboard)")
+        self.btn_open_storyboard.setObjectName("btn_storyboard")
+        self.btn_open_storyboard.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_open_storyboard.setStyleSheet(
+            "background-color: #6366f1; color: #ffffff; font-weight: 700; font-size: 12px; border-radius: 6px; padding: 9px 12px; border: none;"
+        )
+        self.btn_open_storyboard.clicked.connect(self._on_open_storyboard_clicked)
+        sidebar_layout.addWidget(self.btn_open_storyboard)
+
+        self.btn_open_tts = QPushButton("🎙 Chuyển sang Tạo Voice TTS")
+        self.btn_open_tts.setObjectName("btn_subtle")
+        self.btn_open_tts.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_open_tts.setStyleSheet(
+            "background-color: #1e293b; color: #34d399; font-weight: 600; font-size: 12px; border-radius: 6px; padding: 9px 12px; border: 1px solid #10b981;"
+        )
+        self.btn_open_tts.clicked.connect(self._on_open_tts_clicked)
+        sidebar_layout.addWidget(self.btn_open_tts)
+
+        sidebar_layout.addStretch()
+        split_layout.addWidget(sidebar_frame)
+
+        # ---------------- CỘT PHẢI: PROMPT PREVIEW & STUDIO ----------------
+        preview_container = QWidget()
+        preview_layout = QVBoxLayout(preview_container)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(10)
+
         preview_header = QHBoxLayout()
-        lbl_pv = QLabel("📋 Master Prompt Cho AI (ChatGPT, Claude, Gemini, DeepSeek):")
+        preview_header.setSpacing(8)
+        lbl_pv = QLabel("📋 Master Prompt AI:")
         lbl_pv.setStyleSheet("font-weight: 700; color: #f8fafc; font-size: 13px;")
         preview_header.addWidget(lbl_pv)
 
-        self.lbl_word_info = QLabel("Ước tính: ~135 - 160 từ tiếng Việt")
-        self.lbl_word_info.setStyleSheet("color: #38bdf8; font-weight: 600; font-size: 12px;")
+        self.lbl_word_info = QLabel("Ước tính: ~135 - 160 từ")
+        self.lbl_word_info.setStyleSheet(
+            "background-color: #0f172a; color: #38bdf8; font-weight: 600; font-size: 11px; "
+            "padding: 3px 8px; border-radius: 4px; border: 1px solid #1e293b;"
+        )
         preview_header.addWidget(self.lbl_word_info)
         preview_header.addStretch()
-        layout.addLayout(preview_header)
+
+        self.btn_copy_prompt = QPushButton("📋 Sao chép Master Prompt")
+        self.btn_copy_prompt.setObjectName("btn_primary")
+        self.btn_copy_prompt.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_copy_prompt.setStyleSheet(
+            "background-color: #16a34a; color: #ffffff; font-weight: 700; font-size: 13px; border-radius: 6px; padding: 8px 18px;"
+        )
+        self.btn_copy_prompt.clicked.connect(self._copy_prompt_to_clipboard)
+        preview_header.addWidget(self.btn_copy_prompt)
+
+        preview_layout.addLayout(preview_header)
 
         # Prompt Text Area
         self.txt_prompt = QPlainTextEdit()
@@ -944,39 +1335,10 @@ class TrendingTab(QWidget):
             }
             """
         )
-        layout.addWidget(self.txt_prompt, stretch=1)
+        preview_layout.addWidget(self.txt_prompt, stretch=1)
 
-        # Action Buttons Bottom Bar
-        action_bar = QHBoxLayout()
-        action_bar.setSpacing(12)
-
-        self.btn_copy_prompt = QPushButton("📋 Sao chép Master Prompt")
-        self.btn_copy_prompt.setObjectName("btn_primary")
-        self.btn_copy_prompt.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_copy_prompt.setStyleSheet(
-            "background-color: #16a34a; color: #ffffff; font-weight: 700; font-size: 14px; border-radius: 6px; padding: 10px 22px;"
-        )
-        self.btn_copy_prompt.clicked.connect(self._copy_prompt_to_clipboard)
-        action_bar.addWidget(self.btn_copy_prompt)
-
-        self.btn_open_tts = QPushButton("🎙 Chuyển sang Tạo Voice TTS")
-        self.btn_open_tts.setObjectName("btn_subtle")
-        self.btn_open_tts.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_open_tts.setStyleSheet(
-            "background-color: #1e293b; color: #38bdf8; font-weight: 600; font-size: 13px; border-radius: 6px; padding: 10px 18px; border: 1px solid #334155;"
-        )
-        self.btn_open_tts.clicked.connect(self._on_open_tts_clicked)
-        self.btn_open_storyboard = QPushButton("⚡ Sinh Kịch Bản Phân Cảnh (AI Storyboard)")
-        self.btn_open_storyboard.setObjectName("btn_storyboard")
-        self.btn_open_storyboard.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_open_storyboard.setStyleSheet(
-            "background-color: #7c3aed; color: #ffffff; font-weight: 700; font-size: 13px; border-radius: 6px; padding: 10px 20px;"
-        )
-        self.btn_open_storyboard.clicked.connect(self._on_open_storyboard_clicked)
-        action_bar.addWidget(self.btn_open_storyboard)
-
-        action_bar.addStretch()
-        layout.addLayout(action_bar)
+        split_layout.addWidget(preview_container, stretch=1)
+        layout.addLayout(split_layout, stretch=1)
         return widget
 
     def _on_open_storyboard_clicked(self):
@@ -986,15 +1348,68 @@ class TrendingTab(QWidget):
         if not topic:
             topic = self.active_topic or self.txt_custom_topic.text().strip()
 
-        dlg = StoryboardDialog(topic=topic, parent=self)
+        # Đồng bộ cấu hình Thời lượng, Tông điệu và Tỉ lệ khung hình từ giao diện ngoài
+        dur_val = self.combo_duration.currentData()
+        if dur_val == -1:
+            duration = self.spin_custom_min.value() * 60 + self.spin_custom_sec.value()
+            if duration <= 0:
+                duration = 60
+        else:
+            duration = dur_val if dur_val is not None and dur_val > 0 else 60
+
+        tone = self.combo_tone.currentData() or "dramatic"
+        platform = self.combo_platform.currentData() or "shorts"
+        aspect_ratio = "16:9" if platform == "youtube" else "9:16"
+
+        if duration <= 35:
+            scene_count = 3
+        elif duration <= 75:
+            scene_count = 5
+        elif duration <= 150:
+            scene_count = 8
+        else:
+            scene_count = 10
+
+        dlg = StoryboardDialog(
+            topic=topic,
+            duration_seconds=duration,
+            scene_count=scene_count,
+            tone=tone,
+            aspect_ratio=aspect_ratio,
+            parent=self,
+        )
         dlg.send_to_tts_requested.connect(self.request_open_tts.emit)
         dlg.exec()
 
     def open_prompt_studio(self, idea: Dict[str, Any]):
         self.selected_idea = idea
         self.lbl_prompt_idea_title.setText(f"📝 Ý tưởng: {idea['title']}")
+        # Đồng bộ thời lượng từ Trang Ý Tưởng sang Trang Master Prompt
+        if hasattr(self, "combo_ideas_duration"):
+            dur = self.combo_ideas_duration.currentData()
+            idx = self.combo_duration.findData(dur)
+            if idx != -1:
+                self.combo_duration.setCurrentIndex(idx)
+            if dur == -1:
+                self.spin_custom_min.setValue(self.spin_ideas_custom_min.value())
+                self.spin_custom_sec.setValue(self.spin_ideas_custom_sec.value())
+                self.box_custom_time.setVisible(True)
         self._rebuild_prompt()
         self.stack.setCurrentIndex(self.PAGE_PROMPT)
+
+    def _on_back_to_ideas_clicked(self):
+        if hasattr(self, "combo_ideas_duration") and hasattr(self, "combo_duration"):
+            dur = self.combo_duration.currentData()
+            idx = self.combo_ideas_duration.findData(dur)
+            if idx != -1:
+                self.combo_ideas_duration.setCurrentIndex(idx)
+            if dur == -1:
+                self.spin_ideas_custom_min.setValue(self.spin_custom_min.value())
+                self.spin_ideas_custom_sec.setValue(self.spin_custom_sec.value())
+                self.box_ideas_custom_time.setVisible(True)
+            else:
+                self.box_ideas_custom_time.setVisible(False)
+        self.stack.setCurrentIndex(self.PAGE_IDEAS)
 
     def _on_duration_combo_changed(self):
         is_custom = (self.combo_duration.currentData() == -1)
@@ -1147,5 +1562,18 @@ class TrendingTab(QWidget):
                 self._trends_worker.error_occurred.disconnect()
             except Exception:
                 pass
+            if self._trends_worker.isRunning():
+                self._trends_worker.wait(1000)
+
+        if self._gemini_ideas_worker:
+            self._gemini_ideas_worker.cancel()
+            try:
+                self._gemini_ideas_worker.ideas_ready.disconnect()
+                self._gemini_ideas_worker.error_occurred.disconnect()
+            except Exception:
+                pass
+            if self._gemini_ideas_worker.isRunning():
+                self._gemini_ideas_worker.wait(1000)
+
         super().closeEvent(event)
 

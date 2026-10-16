@@ -27,6 +27,7 @@ htmlcov/
 !.env.example
 *.pem
 *.key
+local_settings.json
 
 # ==========================================
 # Media Outputs & Temporary Files
@@ -86,6 +87,9 @@ tests/*
 !tests/test_trending_ui.py
 !tests/test_storyboard_generator.py
 !tests/test_storyboard_ui.py
+!tests/test_gemini_client.py
+!tests/test_gemini_key_dialog_ui.py
+!tests/test_config_persistence.py
 build/
 dist/
 scratch/

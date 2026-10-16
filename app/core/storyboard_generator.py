@@ -150,10 +150,12 @@ def generate_storyboard(
     tone: str = "mystery",
     visual_style: str = "cinematic",
     aspect_ratio: str = "9:16",
+    duration_seconds: Optional[int] = None,
 ) -> List[StoryboardScene]:
     """
     Sinh kịch bản phân cảnh chi tiết dựa trên chủ đề, số cảnh và phong cách mong muốn.
     Hoạt động 100% offline với cơ chế suy luận kịch bản thông minh.
+    Nếu có duration_seconds, tự động chia đều thời lượng cho các phân cảnh.
     """
     topic_clean = topic.strip() or "Chủ đề xu hướng"
     domain = detect_topic_domain(topic_clean)
@@ -171,15 +173,19 @@ def generate_storyboard(
     # Chọn mẫu phân bổ theo số cảnh
     selected_patterns = _interpolate_patterns(templates, total_scenes)
 
+    # Tính thời lượng mỗi cảnh nếu có duration_seconds
+    per_scene_dur = round(duration_seconds / total_scenes, 1) if duration_seconds and duration_seconds > 0 else None
+
     for i, pat in enumerate(selected_patterns, start=1):
         sc_id = f"SC{i:02d}"
+        dur = per_scene_dur if per_scene_dur is not None else pat.get("duration", 6.0)
         scenes.append(
             StoryboardScene(
                 scene_id=sc_id,
                 title=pat["title"],
                 voiceover=pat["voiceover"],
                 prompt=pat["prompt"],
-                duration=pat.get("duration", 6.0),
+                duration=dur,
                 sfx=pat.get("sfx", tone_profile["sfx"]),
                 motion_type=pat.get("motion", tone_profile["motion"]),
             )
@@ -630,6 +636,7 @@ def generate_full_script_for_topic(
         scene_count=target_scenes,
         tone=tone,
         visual_style=visual_style,
+        duration_seconds=duration_seconds,
     )
     return export_storyboard_to_full_script(scenes)
 

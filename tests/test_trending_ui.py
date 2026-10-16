@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt, QTimer, QDate
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel
 from PyQt6.QtTest import QTest
 
 from app.ui.trending_tab import TrendingTab
@@ -58,10 +58,13 @@ class TrendingUIAutomationTests(unittest.TestCase):
             return_value=cls.mock_trends
         )
         cls.fetch_patcher.start()
+        cls.gemini_patcher = patch("app.config.GEMINI_CONNECTED", False)
+        cls.gemini_patcher.start()
 
     @classmethod
     def tearDownClass(cls):
         cls.fetch_patcher.stop()
+        cls.gemini_patcher.stop()
 
     def tearDown(self):
         self.app.processEvents()
@@ -394,5 +397,274 @@ class TrendingUIAutomationTests(unittest.TestCase):
             window.close()
 
 
+class TrendingGeminiAITests(unittest.TestCase):
+    """Kiểm thử tự động cho tính năng Sinh Ý Tưởng Gemini AI & Giao diện 2 Cột của TrendingTab."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+        cls.mock_ai_ideas = [
+            {
+                "id": "GEMINI-001",
+                "index": 1,
+                "topic": "Sinh tồn tài chính",
+                "title": "Bẫy thẻ tín dụng âm thầm bào mòn ví tiền",
+                "angle": "mystery",
+                "angle_label": "🎯 Cạm bẫy & Góc khuất",
+                "description": "Bóc trần cách các ngân hàng và ứng dụng mua trước trả sau kiếm tiền từ sự bất cẩn của bạn.",
+                "hook_preview": "90% người trẻ không hề biết họ đang trả gấp đôi tiền cho cốc trà sữa này!",
+                "is_ai_generated": True,
+            },
+            {
+                "id": "GEMINI-002",
+                "index": 2,
+                "topic": "Sinh tồn tài chính",
+                "title": "Quy tắc 6 chiếc lọ đã lỗi thời trong năm 2026",
+                "angle": "debate",
+                "angle_label": "⚡ Tranh cãi & Phản trực giác",
+                "description": "Tại sao việc chia nhỏ thu nhập kiểu truyền thống khiến bạn mãi không tích lũy được tài sản lớn.",
+                "hook_preview": "Dừng ngay việc chia tiền vào 6 chiếc lọ nếu bạn không muốn mãi nghèo!",
+                "is_ai_generated": True,
+            },
+        ]
+
+    def tearDown(self):
+        self.app.processEvents()
+
+    @patch("app.core.gemini_client.generate_video_ideas_with_gemini")
+    @patch("app.config.GEMINI_CONNECTED", True)
+    @patch("app.config.GEMINI_API_KEY", "test_gemini_api_key_valid")
+    def test_gemini_ai_ideas_worker_success(self, mock_gemini_call):
+        mock_gemini_call.return_value = self.mock_ai_ideas
+
+        tab = TrendingTab()
+        try:
+            tab.open_ideas_for_topic("Sinh tồn tài chính")
+            self.assertEqual(tab.stack.currentIndex(), TrendingTab.PAGE_IDEAS)
+
+            # Chờ worker hoàn thành
+            if tab._gemini_ideas_worker:
+                tab._gemini_ideas_worker.wait(2000)
+            self.app.processEvents()
+
+            # Xác thực danh sách ý tưởng do AI sinh ra
+            self.assertEqual(len(tab.current_ideas), 2)
+            self.assertTrue(tab.current_ideas[0]["is_ai_generated"])
+            self.assertIn("Bẫy thẻ tín dụng", tab.current_ideas[0]["title"])
+            self.assertIn("90% người trẻ", tab.current_ideas[0]["hook_preview"])
+
+            # Xác thực hiển thị trên UI
+            self.assertIn("Gemini AI", tab.lbl_active_topic.text())
+            self.assertIn("Gemini AI", tab.lbl_ideas_source_badge.text())
+            self.assertFalse(tab.progress_ideas.isVisible())
+
+            # Kiểm tra thẻ ý tưởng đầu tiên được render
+            card_widget = tab.ideas_layout.itemAt(0).widget()
+            self.assertIsNotNone(card_widget)
+            card_text = " ".join([lbl.text() for lbl in card_widget.findChildren(QLabel)])
+            self.assertIn("Hook 3s đầu", card_text)
+            self.assertIn("90% người trẻ", card_text)
+            self.assertIn("Gemini AI", card_text)
+        finally:
+            if tab._gemini_ideas_worker:
+                tab._gemini_ideas_worker.cancel()
+                if tab._gemini_ideas_worker.isRunning():
+                    tab._gemini_ideas_worker.wait(1000)
+            tab.close()
+
+    @patch("app.core.gemini_client.generate_video_ideas_with_gemini")
+    @patch("app.config.GEMINI_CONNECTED", True)
+    @patch("app.config.GEMINI_API_KEY", "test_gemini_api_key_valid")
+    def test_gemini_ai_ideas_worker_fallback_on_error(self, mock_gemini_call):
+        mock_gemini_call.side_effect = RuntimeError("Quota Exceeded 429")
+
+        tab = TrendingTab()
+        try:
+            tab.open_ideas_for_topic("Bất động sản")
+            if tab._gemini_ideas_worker:
+                tab._gemini_ideas_worker.wait(2000)
+            self.app.processEvents()
+
+            # Khi lỗi, tự động fallback về 75 ý tưởng offline
+            self.assertEqual(len(tab.current_ideas), 75)
+            self.assertIn("Quota Exceeded", tab.lbl_ideas_status.text())
+            self.assertIn("Mẫu Offline", tab.lbl_ideas_source_badge.text())
+            self.assertFalse(tab.progress_ideas.isVisible())
+        finally:
+            if tab._gemini_ideas_worker:
+                tab._gemini_ideas_worker.cancel()
+                if tab._gemini_ideas_worker.isRunning():
+                    tab._gemini_ideas_worker.wait(1000)
+            tab.close()
+
+    def test_direct_action_tts_from_idea_card(self):
+        tab = TrendingTab()
+        try:
+            tab.open_ideas_for_topic("Tiết kiệm bão giá", force_offline=True)
+            self.assertEqual(tab.stack.currentIndex(), TrendingTab.PAGE_IDEAS)
+
+            tts_receiver = MagicMock()
+            tab.request_open_tts.connect(tts_receiver)
+
+            test_idea = {
+                "title": "5 thói quen mua sắm ngốn sạch lương",
+                "angle": "mystery",
+                "description": "Những khoản chi tiêu vô hình hàng ngày.",
+            }
+            tab._on_direct_tts_from_idea(test_idea)
+            self.app.processEvents()
+
+            tts_receiver.assert_called_once()
+            script_sent = tts_receiver.call_args[0][0]
+            self.assertIn("5 thói quen", script_sent)
+            self.assertGreater(len(script_sent), 60)
+        finally:
+            tab.close()
+
+    def test_master_prompt_split_view_components(self):
+        tab = TrendingTab()
+        try:
+            tab.open_ideas_for_topic("AI Video 2026", force_offline=True)
+            idea = tab.current_ideas[0]
+            tab.open_prompt_studio(idea)
+            self.app.processEvents()
+
+            self.assertEqual(tab.stack.currentIndex(), TrendingTab.PAGE_PROMPT)
+
+            # Kiểm tra các widget cấu hình ở cột trái
+            self.assertTrue(hasattr(tab, "combo_duration"))
+            self.assertTrue(hasattr(tab, "combo_platform"))
+            self.assertTrue(hasattr(tab, "combo_tone"))
+            self.assertTrue(hasattr(tab, "combo_language"))
+            self.assertTrue(hasattr(tab, "chk_scenes"))
+            self.assertTrue(hasattr(tab, "btn_open_storyboard"))
+            self.assertTrue(hasattr(tab, "btn_open_tts"))
+
+            # Kiểm tra các widget xem trước ở cột phải
+            self.assertTrue(hasattr(tab, "txt_prompt"))
+            self.assertTrue(hasattr(tab, "lbl_word_info"))
+            self.assertTrue(hasattr(tab, "btn_copy_prompt"))
+
+            self.assertIn(idea["title"], tab.txt_prompt.toPlainText())
+        finally:
+            tab.close()
+
+    def test_ideas_page_duration_selector_and_sync(self):
+        tab = TrendingTab()
+        try:
+            tab.open_ideas_for_topic("Kinh doanh online", force_offline=True)
+            self.assertEqual(tab.stack.currentIndex(), TrendingTab.PAGE_IDEAS)
+
+            # 1. Kiểm tra tồn tại bộ chọn thời lượng trên Trang Ý Tưởng
+            self.assertTrue(hasattr(tab, "combo_ideas_duration"))
+            self.assertTrue(hasattr(tab, "box_ideas_custom_time"))
+            self.assertEqual(tab.combo_ideas_duration.currentData(), 60)
+            self.assertEqual(tab.get_selected_ideas_duration(), 60)
+            self.assertTrue(tab.box_ideas_custom_time.isHidden())
+
+            # 2. Đổi sang 30 giây
+            idx_30 = tab.combo_ideas_duration.findData(30)
+            tab.combo_ideas_duration.setCurrentIndex(idx_30)
+            self.app.processEvents()
+            self.assertEqual(tab.get_selected_ideas_duration(), 30)
+
+            # 3. Đổi sang Tùy chỉnh (phút / giây)
+            idx_custom = tab.combo_ideas_duration.findData(-1)
+            tab.combo_ideas_duration.setCurrentIndex(idx_custom)
+            self.app.processEvents()
+            self.assertFalse(tab.box_ideas_custom_time.isHidden())
+
+            tab.spin_ideas_custom_min.setValue(4)
+            tab.spin_ideas_custom_sec.setValue(15)
+            self.assertEqual(tab.get_selected_ideas_duration(), 4 * 60 + 15)
+
+            # 4. Chuyển sang Master Prompt Studio -> Thời lượng phải tự động đồng bộ sang
+            idea = tab.current_ideas[0]
+            tab.open_prompt_studio(idea)
+            self.app.processEvents()
+            self.assertEqual(tab.stack.currentIndex(), TrendingTab.PAGE_PROMPT)
+            self.assertEqual(tab.combo_duration.currentData(), -1)
+            self.assertEqual(tab.spin_custom_min.value(), 4)
+            self.assertEqual(tab.spin_custom_sec.value(), 15)
+            self.assertFalse(tab.box_custom_time.isHidden())
+
+            # 5. Đổi thời lượng trên Prompt Studio sang 120s rồi quay lại Ideas page -> Tự động đồng bộ ngược lại
+            idx_120 = tab.combo_duration.findData(120)
+            tab.combo_duration.setCurrentIndex(idx_120)
+            self.app.processEvents()
+
+            QTest.mouseClick(tab.btn_back_to_ideas, Qt.MouseButton.LeftButton)
+            self.app.processEvents()
+            self.assertEqual(tab.stack.currentIndex(), TrendingTab.PAGE_IDEAS)
+            self.assertEqual(tab.combo_ideas_duration.currentData(), 120)
+            self.assertEqual(tab.get_selected_ideas_duration(), 120)
+            self.assertTrue(tab.box_ideas_custom_time.isHidden())
+        finally:
+            tab.close()
+
+    def test_direct_actions_use_selected_duration(self):
+        tab = TrendingTab()
+        try:
+            tab.open_ideas_for_topic("Tài chính cá nhân", force_offline=True)
+            self.assertEqual(tab.stack.currentIndex(), TrendingTab.PAGE_IDEAS)
+
+            # Chọn thời lượng 30s
+            idx_30 = tab.combo_ideas_duration.findData(30)
+            tab.combo_ideas_duration.setCurrentIndex(idx_30)
+            self.app.processEvents()
+
+            test_idea = {
+                "title": "3 bẫy tài chính",
+                "angle": "mystery",
+                "description": "Chi tiết bẫy tài chính",
+            }
+
+            # Test direct storyboard dùng đúng 30s và 3 cảnh
+            with patch("app.ui.trending_tab.StoryboardDialog") as mock_storyboard_cls:
+                mock_dlg = MagicMock()
+                mock_storyboard_cls.return_value = mock_dlg
+                tab._on_direct_storyboard_from_idea(test_idea)
+                mock_storyboard_cls.assert_called_once()
+                call_kwargs = mock_storyboard_cls.call_args[1]
+                self.assertEqual(call_kwargs.get("duration_seconds"), 30)
+                self.assertEqual(call_kwargs.get("scene_count"), 3)
+
+            # Test direct TTS dùng đúng 30s
+            with patch("app.core.storyboard_generator.generate_full_script_for_topic", return_value="Script 30s test") as mock_gen_script:
+                tab._on_direct_tts_from_idea(test_idea)
+                mock_gen_script.assert_called_once()
+                call_kwargs = mock_gen_script.call_args[1]
+                self.assertEqual(call_kwargs.get("duration_seconds"), 30)
+        finally:
+            tab.close()
+
+    def test_storyboard_dialog_scene_count_changes_duration(self):
+        from app.ui.storyboard_dialog import StoryboardDialog
+        dlg = StoryboardDialog(topic="", duration_seconds=60)
+        try:
+            self.assertEqual(dlg.duration_seconds, 60)
+
+            # Đổi sang 3 cảnh -> 30s
+            idx_3 = dlg.combo_scene_count.findData(3)
+            dlg.combo_scene_count.setCurrentIndex(idx_3)
+            self.app.processEvents()
+            self.assertEqual(dlg.duration_seconds, 30)
+
+            # Đổi sang 8 cảnh -> 120s
+            idx_8 = dlg.combo_scene_count.findData(8)
+            dlg.combo_scene_count.setCurrentIndex(idx_8)
+            self.app.processEvents()
+            self.assertEqual(dlg.duration_seconds, 120)
+
+            # Đổi sang 10 cảnh -> 180s
+            idx_10 = dlg.combo_scene_count.findData(10)
+            dlg.combo_scene_count.setCurrentIndex(idx_10)
+            self.app.processEvents()
+            self.assertEqual(dlg.duration_seconds, 180)
+        finally:
+            dlg.close()
+
+
 if __name__ == "__main__":
     unittest.main()
+

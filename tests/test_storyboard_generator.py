@@ -101,6 +101,19 @@ class StoryboardGeneratorTests(unittest.TestCase):
         script_120s = generate_full_script_for_topic("Bí mật tài chính", duration_seconds=120)
         self.assertGreater(len(script_120s.split()), 200)
 
+    def test_generate_storyboard_with_duration_seconds(self):
+        # 60s with 5 scenes -> each scene ~12.0s
+        scenes_60s = generate_storyboard("Sinh tồn tài chính", scene_count=5, duration_seconds=60)
+        self.assertEqual(len(scenes_60s), 5)
+        for sc in scenes_60s:
+            self.assertEqual(sc.duration, 12.0)
+
+        # 30s with 3 scenes -> each scene ~10.0s
+        scenes_30s = generate_storyboard("Sinh tồn tài chính", scene_count=3, duration_seconds=30)
+        self.assertEqual(len(scenes_30s), 3)
+        for sc in scenes_30s:
+            self.assertEqual(sc.duration, 10.0)
+
 
 if __name__ == "__main__":
     unittest.main()

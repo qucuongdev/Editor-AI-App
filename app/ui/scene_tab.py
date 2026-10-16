@@ -293,10 +293,12 @@ class SceneTab(QWidget):
         from app.ui.storyboard_dialog import StoryboardDialog
 
         default_topic = ""
+        aspect_ratio = "9:16"
         if self.project:
             default_topic = getattr(self.project, "name", "")
+            aspect_ratio = getattr(self.project, "ratio", "9:16") or "9:16"
 
-        dlg = StoryboardDialog(topic=default_topic, parent=self)
+        dlg = StoryboardDialog(topic=default_topic, aspect_ratio=aspect_ratio, parent=self)
         dlg.apply_to_project_requested.connect(self._on_storyboard_applied)
         dlg.send_to_tts_requested.connect(self._on_storyboard_send_to_tts)
         dlg.exec()
